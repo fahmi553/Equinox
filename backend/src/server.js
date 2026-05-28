@@ -224,10 +224,23 @@ app.post('/users', requireAuth, requireAdmin, async (req, res) => {
     return res.status(400).json({ message: 'Username, password, and display name are required.' });
   }
 
+  if (!['ADMIN', 'FAMILY'].includes(role)) {
+    return res.status(400).json({ message: 'Role must be ADMIN or FAMILY.' });
+  }
+
   const passwordHash = await bcrypt.hash(password, 12);
-  const user = await prisma.user.create({ data: { username, displayName, passwordHash, role } });
-  await logActivity('user.created', req.user.id, { createdUserId: user.id });
-  res.status(201).json(publicUser(user));
+
+  try {
+    const user = await prisma.user.create({ data: { username, displayName, passwordHash, role } });
+    await logActivity('user.created', req.user.id, { createdUserId: user.id });
+    res.status(201).json(publicUser(user));
+  } catch (err) {
+    if (err.code === 'P2002') {
+      return res.status(409).json({ message: 'Username is already taken.' });
+    }
+
+    throw err;
+  }
 });
 
 app.get('/notes', requireAuth, async (req, res) => {
