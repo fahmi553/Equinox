@@ -1,0 +1,87 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  FAMILY
+}
+
+model User {
+  id           String        @id @default(cuid())
+  username     String        @unique
+  displayName  String
+  passwordHash String
+  role         Role          @default(FAMILY)
+  createdAt    DateTime      @default(now())
+  notes        Note[]
+  reminders    Reminder[]
+  files        FileAsset[]
+  folders      Folder[]
+  activityLogs ActivityLog[]
+}
+
+model Note {
+  id        String   @id @default(cuid())
+  title     String
+  body      String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+model Reminder {
+  id          String    @id @default(cuid())
+  title       String
+  dueAt       DateTime?
+  isCompleted Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  ownerId     String
+  owner       User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+model FileAsset {
+  id           String   @id @default(cuid())
+  originalName String
+  storedName   String
+  mimeType     String
+  size         Int
+  path         String
+  isShared     Boolean  @default(false)
+  uploadedAt   DateTime @default(now())
+  ownerId      String
+  owner        User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  folderId     String?
+  folder       Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+}
+
+model Folder {
+  id        String      @id @default(cuid())
+  name      String
+  isShared  Boolean     @default(false)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  ownerId   String
+  owner     User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  parentId  String?
+  parent    Folder?     @relation("FolderChildren", fields: [parentId], references: [id], onDelete: Cascade)
+  children  Folder[]    @relation("FolderChildren")
+  files     FileAsset[]
+
+  @@unique([ownerId, parentId, name])
+}
+
+model ActivityLog {
+  id        String   @id @default(cuid())
+  action    String
+  metadata  Json?
+  createdAt DateTime @default(now())
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id], onDelete: SetNull)
+}

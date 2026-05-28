@@ -1,0 +1,51 @@
+services:
+  database:
+    image: postgres:16-alpine
+    container_name: equinox-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-equinox}
+      POSTGRES_USER: ${POSTGRES_USER:-equinox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-equinox}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U equinox -d equinox"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: backend/Dockerfile
+    container_name: equinox-backend
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      DATABASE_URL: postgresql://${POSTGRES_USER:-equinox}:${POSTGRES_PASSWORD:-equinox}@database:5432/${POSTGRES_DB:-equinox}?schema=public
+    ports:
+      - "3000:3000"
+    volumes:
+      - uploads_data:/app/storage/uploads
+    depends_on:
+      database:
+        condition: service_healthy
+
+  frontend:
+    build:
+      context: .
+      dockerfile: frontend/Dockerfile
+    container_name: equinox-frontend
+    restart: unless-stopped
+    ports:
+      - "8080:80"
+    depends_on:
+      - backend
+
+volumes:
+  postgres_data:
+  uploads_data:
