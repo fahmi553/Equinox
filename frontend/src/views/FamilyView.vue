@@ -1,18 +1,45 @@
 <script setup>
-import { computed, onMounted } from 'vue';
+import { computed, onMounted, ref } from 'vue';
 import { ShieldCheck, UserPlus, UsersRound } from '@lucide/vue';
 import AppPage from '../components/AppPage.vue';
+import ConfirmDialog from '../components/ConfirmDialog.vue';
 import {
+  announcementError,
+  announcements,
+  createAnnouncement,
   createFamilyUser,
+  deleteAnnouncement,
   familyError,
   familyUsers,
+  formatBytes,
+  loadAnnouncements,
   loadFamilyUsers,
+  loadRolePermissions,
+  newAnnouncement,
+  rolePermissions,
+  saveAnnouncement,
+  toggleAnnouncementPin,
+  updateRolePermissions,
+  updateUserPermissions,
   newFamilyUser,
   user
 } from '../stores/equinox';
 
+const editingAnnouncement = ref(null);
+const pendingDeleteAnnouncement = ref(null);
 const adminCount = computed(() => familyUsers.value.filter((item) => item.role === 'ADMIN').length);
 const familyCount = computed(() => familyUsers.value.filter((item) => item.role === 'FAMILY').length);
+const permissionOptions = [
+  { key: 'canUploadFiles', label: 'Upload files' },
+  { key: 'canCreateFolders', label: 'Create folders' },
+  { key: 'canCreateNotes', label: 'Create notes' },
+  { key: 'canCreateReminders', label: 'Create reminders' },
+  { key: 'canCreateTasks', label: 'Create tasks' },
+  { key: 'canCreateTags', label: 'Create tags' },
+  { key: 'canCreateBookmarks', label: 'Create bookmarks' },
+  { key: 'canCreateDocumentRecords', label: 'Create trackers' },
+  { key: 'canViewAnnouncements', label: 'View announcements' }
+];
 
 function joinedDate(value) {
   return new Date(value).toLocaleDateString(undefined, {
@@ -22,7 +49,74 @@ function joinedDate(value) {
   });
 }
 
-onMounted(loadFamilyUsers);
+function toDateInput(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  const pad = (part) => String(part).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+}
+
+function memberPermission(member, key) {
+  return member.permissions?.[key] !== false;
+}
+
+function memberOverride(member, key) {
+  return member.permissionOverrides?.[key] ?? null;
+}
+
+function memberPermissionLabel(member, key) {
+  const override = memberOverride(member, key);
+  if (override === true) return 'Allowed override';
+  if (override === false) return 'Blocked override';
+  return memberPermission(member, key) ? 'Role allows' : 'Role blocks';
+}
+
+async function toggleMemberPermission(member, key) {
+  await updateUserPermissions(member, {
+    [key]: memberOverride(member, key) === null ? !memberPermission(member, key) : null
+  });
+}
+
+async function toggleRolePermission(roleItem, key) {
+  await updateRolePermissions(roleItem.role, {
+    ...roleItem.permissions,
+    [key]: !roleItem.permissions[key]
+  });
+}
+
+function beginAnnouncementEdit(announcement) {
+  editingAnnouncement.value = {
+    id: announcement.id,
+    title: announcement.title,
+    body: announcement.body,
+    isPinned: announcement.isPinned,
+    expiresAt: toDateInput(announcement.expiresAt)
+  };
+}
+
+async function submitAnnouncementEdit(announcement) {
+  await saveAnnouncement(announcement, editingAnnouncement.value);
+  editingAnnouncement.value = null;
+}
+
+function askDeleteAnnouncement(announcement) {
+  pendingDeleteAnnouncement.value = announcement;
+}
+
+function cancelDeleteAnnouncement() {
+  pendingDeleteAnnouncement.value = null;
+}
+
+async function confirmDeleteAnnouncement() {
+  if (!pendingDeleteAnnouncement.value) return;
+  const announcement = pendingDeleteAnnouncement.value;
+  pendingDeleteAnnouncement.value = null;
+  await deleteAnnouncement(announcement);
+}
+
+onMounted(async () => {
+  await Promise.all([loadRolePermissions(), loadFamilyUsers(), loadAnnouncements(true)]);
+});
 </script>
 
 <template>
@@ -50,13 +144,43 @@ onMounted(loadFamilyUsers);
           <span>Family</span>
           <strong>{{ familyCount }}</strong>
         </div>
+        <div class="storage-stat">
+          <span>Role defaults</span>
+          <strong>{{ rolePermissions.length }}</strong>
+        </div>
       </aside>
 
       <section class="feature-panel family-main">
+        <section class="storage-section">
+          <div class="storage-section-title">
+            <h4>Role defaults</h4>
+            <span>{{ rolePermissions.length }}</span>
+          </div>
+          <div class="role-permission-list">
+            <article v-for="roleItem in rolePermissions" :key="roleItem.role" class="role-permission-card">
+              <div>
+                <h4>{{ roleItem.role }}</h4>
+                <p>New and inherited permissions for this role.</p>
+              </div>
+              <div class="permission-strip role-defaults">
+                <button
+                  v-for="option in permissionOptions"
+                  :key="option.key"
+                  :class="['permission-toggle', { active: roleItem.permissions[option.key] }]"
+                  type="button"
+                  @click="toggleRolePermission(roleItem, option.key)"
+                >
+                  {{ option.label }}
+                </button>
+              </div>
+            </article>
+          </div>
+        </section>
+
         <div class="storage-toolbar">
           <div class="panel-copy">
             <h3>Create family account</h3>
-            <p>Add a login for someone who should use the private hub.</p>
+            <p>Add a login. New accounts inherit their selected role permissions.</p>
           </div>
           <div class="family-heading-icon" aria-hidden="true">
             <UserPlus :size="30" :stroke-width="1.8" />
@@ -89,13 +213,103 @@ onMounted(loadFamilyUsers);
               </div>
               <div>
                 <h4>{{ member.displayName }}</h4>
-                <p>@{{ member.username }} / Joined {{ joinedDate(member.createdAt) }}</p>
+                <p>
+                  @{{ member.username }} / Joined {{ joinedDate(member.createdAt) }}
+                  <span v-if="member.storage">
+                    / {{ formatBytes(member.storage.storageBytes) }} / {{ member.storage.files }} files
+                  </span>
+                </p>
               </div>
               <strong :class="['role-pill', member.role.toLowerCase()]">{{ member.role }}</strong>
+              <div class="permission-strip">
+                <button
+                  v-for="option in permissionOptions"
+                  :key="option.key"
+                  :class="[
+                    'permission-toggle',
+                    {
+                      active: memberPermission(member, option.key),
+                      override: memberOverride(member, option.key) !== null
+                    }
+                  ]"
+                  type="button"
+                  @click="toggleMemberPermission(member, option.key)"
+                >
+                  {{ option.label }}
+                  <small>{{ memberPermissionLabel(member, option.key) }}</small>
+                </button>
+              </div>
             </article>
           </div>
         </section>
+
+        <section class="family-announcements">
+          <div class="storage-section-title">
+            <h4>Announcements</h4>
+            <span>{{ announcements.length }}</span>
+          </div>
+
+          <form class="announcement-form" @submit.prevent="createAnnouncement">
+            <input v-model="newAnnouncement.title" placeholder="Announcement title" />
+            <textarea v-model="newAnnouncement.body" placeholder="Message for the family"></textarea>
+            <div class="announcement-options">
+              <label class="share-row">
+                <input v-model="newAnnouncement.isPinned" type="checkbox" />
+                <span>Pin announcement</span>
+              </label>
+              <input v-model="newAnnouncement.expiresAt" type="date" />
+            </div>
+            <button class="main-button" type="submit">Post announcement</button>
+            <p v-if="announcementError" class="storage-error">{{ announcementError }}</p>
+          </form>
+
+          <p v-if="!announcements.length" class="empty-state">No announcements yet.</p>
+          <article v-for="announcement in announcements" :key="announcement.id" class="announcement-card">
+            <template v-if="editingAnnouncement?.id !== announcement.id">
+              <div class="announcement-card-heading">
+                <span v-if="announcement.isPinned">Pinned</span>
+                <strong>{{ announcement.title }}</strong>
+              </div>
+              <p>{{ announcement.body }}</p>
+              <small>
+                Posted by {{ announcement.author.displayName }}
+                <span v-if="announcement.expiresAt"> / Expires {{ new Date(announcement.expiresAt).toLocaleDateString() }}</span>
+              </small>
+              <div class="item-actions">
+                <button @click="beginAnnouncementEdit(announcement)">Edit</button>
+                <button @click="toggleAnnouncementPin(announcement)">{{ announcement.isPinned ? 'Unpin' : 'Pin' }}</button>
+                <button @click="askDeleteAnnouncement(announcement)">Delete</button>
+              </div>
+            </template>
+
+            <form v-else class="announcement-form compact" @submit.prevent="submitAnnouncementEdit(announcement)">
+              <input v-model="editingAnnouncement.title" placeholder="Announcement title" />
+              <textarea v-model="editingAnnouncement.body" placeholder="Message for the family"></textarea>
+              <div class="announcement-options">
+                <label class="share-row">
+                  <input v-model="editingAnnouncement.isPinned" type="checkbox" />
+                  <span>Pin announcement</span>
+                </label>
+                <input v-model="editingAnnouncement.expiresAt" type="date" />
+              </div>
+              <div class="item-actions">
+                <button type="submit">Save</button>
+                <button type="button" @click="editingAnnouncement = null">Cancel</button>
+              </div>
+            </form>
+          </article>
+        </section>
       </section>
     </section>
+
+    <ConfirmDialog
+      :open="Boolean(pendingDeleteAnnouncement)"
+      eyebrow="Delete"
+      title="Delete announcement?"
+      :message="`This will permanently delete '${pendingDeleteAnnouncement?.title}'.`"
+      confirm-label="Delete"
+      @cancel="cancelDeleteAnnouncement"
+      @confirm="confirmDeleteAnnouncement"
+    />
   </AppPage>
 </template>

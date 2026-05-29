@@ -1,0 +1,19 @@
+ALTER TABLE "User" ADD COLUMN "canCreateTasks" BOOLEAN;
+ALTER TABLE "RolePermission" ADD COLUMN "canCreateTasks" BOOLEAN NOT NULL DEFAULT true;
+
+CREATE TABLE "Task" (
+  "id" TEXT NOT NULL,
+  "title" TEXT NOT NULL,
+  "details" TEXT NOT NULL DEFAULT '',
+  "priority" TEXT NOT NULL DEFAULT 'NORMAL',
+  "status" TEXT NOT NULL DEFAULT 'OPEN',
+  "dueAt" TIMESTAMP(3),
+  "isShared" BOOLEAN NOT NULL DEFAULT false,
+  "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  "updatedAt" TIMESTAMP(3) NOT NULL,
+  "ownerId" TEXT NOT NULL,
+
+  CONSTRAINT "Task_pkey" PRIMARY KEY ("id")
+);
+
+ALTER TABLE "Task" ADD CONSTRAINT "Task_ownerId_fkey" FOREIGN KEY ("ownerId") REFERENCES "User"("id") ON DELETE CASCADE ON UPDATE CASCADE;

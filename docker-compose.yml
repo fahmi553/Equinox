@@ -27,6 +27,7 @@ services:
       - .env
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-equinox}:${POSTGRES_PASSWORD:-equinox}@database:5432/${POSTGRES_DB:-equinox}?schema=public
+      UPLOAD_DIR: /app/storage/uploads
     ports:
       - "3000:3000"
     volumes:

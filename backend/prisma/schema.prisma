@@ -13,37 +13,114 @@ enum Role {
 }
 
 model User {
-  id           String        @id @default(cuid())
-  username     String        @unique
-  displayName  String
-  passwordHash String
-  role         Role          @default(FAMILY)
-  createdAt    DateTime      @default(now())
-  notes        Note[]
-  reminders    Reminder[]
+  id                       String        @id @default(cuid())
+  username                 String        @unique
+  displayName              String
+  passwordHash             String
+  role                     Role          @default(FAMILY)
+  canUploadFiles           Boolean?
+  canCreateFolders         Boolean?
+  canCreateNotes           Boolean?
+  canCreateReminders       Boolean?
+  canCreateTasks           Boolean?
+  canCreateTags            Boolean?
+  canCreateBookmarks       Boolean?
+  canCreateDocumentRecords Boolean?
+  canViewAnnouncements     Boolean?
+  createdAt                DateTime      @default(now())
+  notes                    Note[]
+  reminders                Reminder[]
+  tasks                    Task[]
+  tags                     Tag[]
+  bookmarks                Bookmark[]
+  documentRecords DocumentRecord[]
+  announcements Announcement[]
   files        FileAsset[]
   folders      Folder[]
   activityLogs ActivityLog[]
+}
+
+model RolePermission {
+  role                     Role     @id
+  canUploadFiles           Boolean  @default(true)
+  canCreateFolders         Boolean  @default(true)
+  canCreateNotes           Boolean  @default(true)
+  canCreateReminders       Boolean  @default(true)
+  canCreateTasks           Boolean  @default(true)
+  canCreateTags            Boolean  @default(true)
+  canCreateBookmarks       Boolean  @default(true)
+  canCreateDocumentRecords Boolean  @default(true)
+  canViewAnnouncements     Boolean  @default(true)
+  updatedAt                DateTime @updatedAt
 }
 
 model Note {
   id        String   @id @default(cuid())
   title     String
   body      String
+  isShared  Boolean  @default(false)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   ownerId   String
   owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  tags      Tag[]
 }
 
 model Reminder {
   id          String    @id @default(cuid())
   title       String
   dueAt       DateTime?
+  isShared    Boolean   @default(false)
   isCompleted Boolean   @default(false)
   createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   ownerId     String
   owner       User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+}
+
+model Tag {
+  id        String      @id @default(cuid())
+  name      String
+  color     String      @default("#7c3aed")
+  isShared  Boolean     @default(false)
+  createdAt DateTime    @default(now())
+  updatedAt DateTime    @updatedAt
+  ownerId   String
+  owner     User        @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  notes     Note[]
+  tasks     Task[]
+  files     FileAsset[]
+  bookmarks Bookmark[]
+
+  @@unique([ownerId, name])
+}
+
+model Bookmark {
+  id        String   @id @default(cuid())
+  title     String
+  url       String
+  notes     String   @default("")
+  isShared  Boolean  @default(false)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  ownerId   String
+  owner     User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  tags      Tag[]
+}
+
+model Task {
+  id          String    @id @default(cuid())
+  title       String
+  details     String    @default("")
+  priority    String    @default("NORMAL")
+  status      String    @default("OPEN")
+  dueAt       DateTime?
+  isShared    Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  ownerId     String
+  owner       User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  tags        Tag[]
 }
 
 model FileAsset {
@@ -54,11 +131,42 @@ model FileAsset {
   size         Int
   path         String
   isShared     Boolean  @default(false)
+  isImportant  Boolean  @default(false)
   uploadedAt   DateTime @default(now())
   ownerId      String
   owner        User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
   folderId     String?
   folder       Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
+  documentRecords DocumentRecord[]
+  tags         Tag[]
+}
+
+model DocumentRecord {
+  id        String    @id @default(cuid())
+  title     String
+  category  String    @default("GENERAL")
+  status    String    @default("OPEN")
+  amount    Float?
+  notes     String    @default("")
+  dueAt     DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  ownerId   String
+  owner     User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  fileId    String?
+  file      FileAsset? @relation(fields: [fileId], references: [id], onDelete: SetNull)
+}
+
+model Announcement {
+  id        String    @id @default(cuid())
+  title     String
+  body      String
+  isPinned  Boolean   @default(false)
+  expiresAt DateTime?
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  authorId  String
+  author    User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
 }
 
 model Folder {

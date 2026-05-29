@@ -53,3 +53,7 @@ Docker frontend: http://localhost:8080
 - VS Code: install for editing
 - Postman or Insomnia: optional API testing
 - Tailscale: install later for private remote access
+
+## NAS Deployment Direction
+
+Equinox is intended to run on a UGREEN NAS through Docker Compose. UGOS should remain the lower-level NAS layer for disks, volumes, networking, and device administration. Equinox should focus on app-level family workflows: accounts, private/shared visibility, notes, reminders, activity logs, and file organization inside the Equinox storage volume.

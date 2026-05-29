@@ -1,7 +1,6 @@
 <script setup>
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
-import { Eclipse } from '@lucide/vue';
 import { isAdmin, isAuthed, logout, user } from './stores/equinox';
 
 const router = useRouter();
@@ -9,9 +8,16 @@ const showAppNav = computed(() => isAuthed.value);
 const navItems = computed(() => [
   { label: 'Dashboard', to: '/dashboard' },
   { label: 'Files', to: '/files' },
+  { label: 'Documents', to: '/documents' },
   { label: 'Notes', to: '/notes' },
   { label: 'Reminders', to: '/reminders' },
+  { label: 'Tasks', to: '/tasks' },
+  { label: 'Bookmarks', to: '/bookmarks' },
+  { label: 'Tags', to: '/tags' },
+  { label: 'Search', to: '/search' },
+  { label: 'Profile', to: '/profile' },
   ...(isAdmin.value ? [{ label: 'Family', to: '/family' }] : []),
+  { label: 'Guide', to: '/guide' },
   { label: 'Activity', to: '/activity' }
 ]);
 
@@ -25,9 +31,7 @@ function handleLogout() {
   <main>
     <header class="site-header">
       <RouterLink class="brand" to="/dashboard">
-        <span class="brand-logo" aria-hidden="true">
-          <Eclipse :size="34" :stroke-width="1.8" />
-        </span>
+        <img class="brand-logo" src="/template-assets/images/equinox-logo.png" alt="Equinox logo" />
         <span>Equinox</span>
       </RouterLink>
 

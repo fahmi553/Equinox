@@ -2,26 +2,44 @@
 import { computed, onMounted } from 'vue';
 import {
   BellRing,
+  Bookmark,
+  CircleHelp,
+  FileText,
   FolderOpen,
   HardDrive,
   LayoutDashboard,
+  ListChecks,
   NotebookText,
+  Search,
   SquareActivity,
+  Tags,
+  UserRound,
   UsersRound
 } from '@lucide/vue';
-import { categories, currentFolder, dashboard, firstName, isAdmin, loadAll, metricCards, user } from '../stores/equinox';
+import { announcements, categories, currentFolder, dashboard, firstName, isAdmin, loadAll, metricCards, permissions, user } from '../stores/equinox';
 
 const iconMap = {
   BellRing,
+  Bookmark,
+  CircleHelp,
+  FileText,
   FolderOpen,
   HardDrive,
   LayoutDashboard,
+  ListChecks,
   NotebookText,
+  Search,
   SquareActivity,
+  Tags,
+  UserRound,
   UsersRound
 };
 
 const visibleCategories = computed(() => categories.filter((category) => !category.adminOnly || isAdmin.value));
+const activeAnnouncements = computed(() => announcements.value.filter((announcement) => {
+  if (!announcement.expiresAt) return true;
+  return new Date(announcement.expiresAt) >= new Date();
+}));
 
 onMounted(loadAll);
 </script>
@@ -84,6 +102,25 @@ onMounted(loadAll);
         <strong>{{ metric.value }}</strong>
       </article>
     </div>
+
+    <section v-if="permissions.canViewAnnouncements" class="feature-panel">
+      <div class="panel-copy">
+        <h3>Family Announcements</h3>
+        <p>Shared household notices from the family admins.</p>
+      </div>
+      <p v-if="!activeAnnouncements.length" class="empty-state">No announcements right now.</p>
+      <article v-for="announcement in activeAnnouncements.slice(0, 4)" :key="announcement.id" class="announcement-card compact">
+        <div class="announcement-card-heading">
+          <span v-if="announcement.isPinned">Pinned</span>
+          <strong>{{ announcement.title }}</strong>
+        </div>
+        <p>{{ announcement.body }}</p>
+        <small>
+          {{ announcement.author.displayName }}
+          <span v-if="announcement.expiresAt"> / Until {{ new Date(announcement.expiresAt).toLocaleDateString() }}</span>
+        </small>
+      </article>
+    </section>
 
     <section class="feature-panel">
       <div class="panel-copy">

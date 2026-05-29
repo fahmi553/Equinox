@@ -1,218 +1,400 @@
 # Equinox Roadmap
 
-Equinox is a private digital ecosystem.
+## Equinox 2.0 Vision
 
-It is not just a NAS app or another website project. The goal is to become a self-hosted system that combines:
+Equinox is not a NAS replacement.
 
-- private cloud storage
-- productivity system
-- home server dashboard
-- family platform
-- developer playground
-- future automation and AI layer
+Equinox is a self-hosted digital ecosystem platform that provides one interface for family services, productivity tools, media, projects, and NAS resources through standard integrations.
 
-The core idea is simple: one self-hosted system that you own.
+```text
+User
+  |
+  v
+Equinox
+  |
+  v
+Apps & Services
+  |
+  v
+NAS Infrastructure
+```
 
-No subscriptions. No vendor lock-in. No monthly fees.
+The user should not need to understand SMB, WebDAV, Docker, PostgreSQL, Jellyfin, Immich, Tailscale, or UGOS. Those are implementation details behind Equinox.
 
-## Core Philosophy
+## Core Principles
 
-Equinox should centralize parts of digital life that are usually scattered across:
+### 1. Do Not Rebuild NAS Functions
 
-- Google Drive
-- OneDrive or iCloud
-- Notion
-- Trello
-- Obsidian
-- Spotify playlists
-- password managers
-- cloud storage
-- shared family apps
-- Discord bots
-- public hosting
-- random productivity apps
+Equinox should not rebuild:
 
-Equinox should grow into your own private operating system for digital life.
+- RAID
+- storage pools
+- snapshots
+- disk health
+- SMART monitoring
+- NAS share management
 
-## Version 1: Foundation
+UGOS, TrueNAS, Unraid, and other infrastructure platforms already handle those better.
 
-Keep v1 small and useful.
+### 2. Build The User Experience
 
-- [x] Docker Compose stack
-- [x] Vue 3 frontend
-- [x] Node.js Express backend
-- [x] PostgreSQL database
-- [x] Prisma ORM
-- [x] JWT login system
-- [x] First registered user becomes admin
-- [x] Notes
-- [x] Reminders
-- [x] File upload
-- [x] Folder support
-- [x] Private/shared file visibility
-- [x] File download
-- [x] File delete
-- [x] Basic activity log
-- [x] Proper app navigation and routes
-- [x] Dedicated dashboard page
-- [x] Dedicated file manager page
-- [x] Dedicated notes page
-- [x] Dedicated reminders page
-- [x] Family account management UI
-- [x] Delete confirmations
-- [x] Better empty states
+Equinox should focus on:
 
-## Main Product Areas
+- dashboard
+- family hub
+- notes
+- tasks
+- announcements
+- unified search
+- unified navigation
+- simple family-friendly workflows
 
-### 1. Personal Cloud Storage
+### 3. Use Standard Integrations
 
-Like Google Drive, OneDrive, or iCloud, but private and self-hosted.
+Equinox should communicate through adapters and standard interfaces:
 
-- [x] Upload files
-- [x] Organize with folders
-- [x] Download files
-- [x] Delete files
-- [x] Share files with family users
-- [ ] Rename files
-- [ ] Move files between folders
-- [ ] Folder sharing rules
-- [ ] Storage usage dashboard
-- [ ] File search
-- [ ] File previews
-- [ ] Automatic backups
-- [ ] Remote access via Tailscale
+- WebDAV
+- SMB
+- Docker
+- SSH
+- REST APIs
 
-### 2. Family Digital Hub
+Do not hardcode Equinox specifically to UGREEN. UGREEN is the first deployment target, not the permanent architectural boundary.
 
-Each family member should have an account, storage, dashboard, and permissions.
+## Module Structure
 
-- [x] User accounts
-- [x] Admin/family roles
-- [x] Family account creation UI
-- [ ] User profile page
-- [ ] Shared family notes
-- [ ] Shared family folders
-- [ ] Important documents area
-- [ ] Bills/documents tracker
-- [ ] Family announcements
-- [ ] Per-user storage visibility
-- [ ] Permission controls
+### Module A - Identity
 
-### 3. Personal Productivity System
+Purpose: who is using Equinox?
 
-Like a simple private Notion, Trello, or Obsidian.
+- login
+- family accounts
+- user profiles
+- roles
+- permission defaults
+- per-user overrides
 
-- [x] Notes
-- [x] Reminders
-- [ ] Tasks
-- [ ] Projects
-- [ ] Project boards
-- [ ] Tags
-- [ ] Bookmarks
-- [ ] Quick snippets
-- [ ] Search across notes/files/bookmarks
-- [ ] Markdown support
+Target roles:
 
-### 4. Self-Hosted Media Center
+- Admin
+- Family Member
+- Guest
+- Child
 
-Optional later. Equinox does not need to replace mature media apps immediately, but it can integrate with them.
+### Module B - Dashboard
 
-- [ ] Photo gallery
-- [ ] Music library
-- [ ] Video/media library
-- [ ] Jellyfin integration
-- [ ] Navidrome integration
-- [ ] Immich integration
-- [ ] Media indexing
+Main homepage.
 
-### 5. Developer Control Center
+- storage usage summary
+- recent files
+- recent photos
+- recent tasks
+- announcements
+- server status
+- quick module shortcuts
 
-For home server and developer use.
+### Module C - Family Hub
 
-- [ ] Docker container overview
-- [ ] Project deployment list
-- [ ] Server health dashboard
-- [ ] CPU/RAM/disk usage
-- [ ] Logs viewer
-- [ ] Backup status
-- [ ] Minecraft server panel
-- [ ] Service restart controls
-- [ ] NAS deployment guide
+Shared family space.
 
-### 6. AI and Automation Platform
+- announcements
+- calendar
+- shopping list
+- birthdays
+- shared notes
+- important documents
+- shared tasks
 
-Future layer after the core system is stable.
+### Module D - File Portal
 
-- [ ] Local AI assistant
-- [ ] Smart file tagging
-- [ ] Smart search
-- [ ] Voice assistant
-- [ ] Automation workflows
-- [ ] Scheduled jobs
-- [ ] Notification rules
+Not a file system replacement. A portal over storage services.
 
-## Technical Architecture
+- files
+- folders
+- upload
+- download
+- search
+- tags
+- adapter-backed storage
 
-Current recommended stack:
+Storage should live on NAS or another storage backend, not inside Equinox as the long-term source of truth.
 
-- Frontend: Vue 3 + Vite
-- Backend: Node.js + Express
-- Database: PostgreSQL
-- ORM: Prisma
-- Auth: JWT
-- Storage: Docker volume/local filesystem
-- Deployment: Docker Compose
-- Remote access: Tailscale
+### Module E - Photo Portal
 
-Target structure:
+Future module.
+
+Possible backends:
+
+- Immich
+- UGOS Photos
+- generic photo API adapter
+
+### Module F - Media Portal
+
+Future module.
+
+Possible backends:
+
+- Jellyfin
+- Navidrome
+- Audiobookshelf
+
+The user sees movies, TV, music, and audiobooks without needing to know which service provides them.
+
+### Module G - Project Portal
+
+Developer and project workspace.
+
+- project list
+- documentation
+- GitHub repositories
+- deployments
+- Docker containers
+
+### Module H - Server Portal
+
+NAS and service status.
+
+- CPU
+- RAM
+- storage
+- network
+- Docker
+- UPS status
+- service health
+
+### Module I - Automation Portal
+
+Future automation layer.
+
+- scheduled backups
+- file cleanup
+- photo organization
+- notifications
+- workflow automations
+
+## Integration Layer
+
+All infrastructure communication should go through adapters.
 
 ```text
 Equinox
-├── frontend: Vue 3
-├── backend: Node.js Express API
-├── database: PostgreSQL
-├── storage: Docker volume/local filesystem
-├── auth: username/password login
-├── remote access: Tailscale
-└── deployment: Docker Compose, later NAS
+|-- UI Layer
+|-- Business Logic
+|-- Database
+`-- Integration Layer
+    |-- Local Storage Adapter
+    |-- WebDAV Adapter
+    |-- SMB Adapter
+    |-- Docker Adapter
+    |-- SSH Adapter
+    `-- API Adapter
 ```
 
-Storage direction:
+This keeps Equinox portable across:
 
-```text
-/storage/uploads
-/storage/family
-/storage/media
-/storage/backups
-```
+- Windows PC
+- UGREEN NAS
+- TrueNAS
+- Unraid
+- mini-PC server
+- future self-hosted infrastructure
 
-## Long-Term Vision
+## Technology Stack
 
-Eventually, these devices should connect into Equinox:
+### Frontend
 
-- phone
-- laptop
-- PC
-- NAS
-- smart TV
+- Vue 3
+- Vite
+- Pinia
+- Vue Router
+- Tailwind CSS
 
-Equinox should become the private ecosystem that ties them together.
+### Backend
 
-## Development Rule
+- Node.js
+- Express
+- Prisma
 
-Do not build everything at once.
+### Database
 
-Build in layers:
+- PostgreSQL
 
-1. Make the foundation stable.
-2. Make the core features useful.
-3. Make the UI easy for average family users.
-4. Add admin and server features.
-5. Add media, automation, and AI later.
+Equinox database stores application data only:
 
-Next recommended implementation:
+- users
+- roles
+- permissions
+- notes
+- tasks
+- announcements
+- bookmarks
+- tags
+- settings
+- activity logs
+- integration metadata
 
-- [x] Frontend app shell and routing
-- [x] Split the single-page UI into real pages
-- [x] Improve file manager UX
-- [x] Add family account management UI
+Equinox should not treat media files or NAS storage as database-owned application data.
+
+### Infrastructure
+
+- Docker
+- Docker Compose
+- Tailscale
+
+## Development Roadmap
+
+### Phase 1 - Foundation
+
+No NAS required.
+
+- [ ] Authentication
+  - [ ] Login
+  - [ ] First admin bootstrap
+  - [ ] Session handling
+- [ ] Identity
+  - [ ] Admin role
+  - [ ] Family Member role
+  - [ ] Guest role
+  - [ ] Child role
+  - [ ] User profiles
+  - [ ] Role permission defaults
+  - [ ] Per-user permission overrides
+- [ ] Core dashboard
+  - [ ] Dashboard shell
+  - [ ] Recent activity
+  - [ ] Announcements widget
+  - [ ] Task summary
+  - [ ] Service status placeholder
+- [ ] Productivity basics
+  - [ ] Notes
+  - [ ] Tasks
+  - [ ] Tags
+  - [ ] Bookmarks
+  - [ ] Announcements
+- [ ] Activity logs
+
+### Phase 2 - Portal Framework
+
+Still no NAS required.
+
+- [ ] App shell
+  - [ ] Sidebar navigation
+  - [ ] Mobile navigation
+  - [ ] Module landing pages
+  - [ ] Consistent empty states
+  - [ ] Practical family-friendly layouts
+- [ ] Module system
+  - [ ] Module registry
+  - [ ] Module enable/disable settings
+  - [ ] Module health states
+  - [ ] Route guards by permission
+- [ ] Unified search
+  - [ ] Search notes
+  - [ ] Search tasks
+  - [ ] Search bookmarks
+  - [ ] Search announcements
+  - [ ] Search tags
+  - [ ] Prepare adapter-backed search results
+- [ ] Settings foundation
+  - [ ] System settings table
+  - [ ] Integration settings table
+  - [ ] User preferences
+
+### Phase 3 - Storage Integration
+
+Works on PC first and future NAS later.
+
+- [ ] Integration adapter contracts
+  - [ ] Storage adapter interface
+  - [ ] Health check interface
+  - [ ] Capability reporting
+  - [ ] Error mapping for user-friendly messages
+- [ ] Local Storage Adapter
+  - [ ] Browse files
+  - [ ] Upload files
+  - [ ] Download files
+  - [ ] Delete files
+  - [ ] Search local metadata
+- [ ] WebDAV Adapter
+  - [ ] Connection settings
+  - [ ] Browse files
+  - [ ] Upload files
+  - [ ] Download files
+  - [ ] Folder support
+- [ ] File Portal
+  - [ ] Unified file browser
+  - [ ] Adapter-backed file actions
+  - [ ] Important documents
+  - [ ] Shared file portal view
+  - [ ] File tags
+
+### Phase 4 - NAS Integration
+
+Connect Equinox to UGOS through standard integrations.
+
+- [ ] SMB Adapter
+  - [ ] Connection settings
+  - [ ] Browse shares
+  - [ ] Read file metadata
+- [ ] Docker Adapter
+  - [ ] Container list
+  - [ ] Container status
+  - [ ] Service links
+  - [ ] Basic start/stop controls behind admin permissions
+- [ ] SSH Adapter
+  - [ ] Connection settings
+  - [ ] Command allowlist
+  - [ ] Server status checks
+- [ ] Server Portal
+  - [ ] CPU summary
+  - [ ] RAM summary
+  - [ ] Storage summary
+  - [ ] Network summary
+  - [ ] Docker summary
+
+### Phase 5 - Ecosystem Expansion
+
+- [ ] Family Hub expansion
+  - [ ] Calendar
+  - [ ] Shopping list
+  - [ ] Birthdays
+  - [ ] Shared household checklist
+- [ ] Photo Portal
+  - [ ] Immich adapter
+  - [ ] UGOS Photos adapter research
+  - [ ] Recent photos
+  - [ ] Albums
+- [ ] Media Portal
+  - [ ] Jellyfin adapter
+  - [ ] Navidrome adapter
+  - [ ] Audiobookshelf adapter
+  - [ ] Continue watching / recently added
+- [ ] Project Portal
+  - [ ] Project list
+  - [ ] Documentation links
+  - [ ] GitHub repository links
+  - [ ] Deployment links
+  - [ ] Docker project grouping
+- [ ] Automation Portal
+  - [ ] Scheduled jobs
+  - [ ] Notifications
+  - [ ] Cleanup workflows
+  - [ ] Backup workflow UI
+
+## Current Checklist Audit
+
+The new roadmap now covers the missing items from the 2.0 vision:
+
+- roles include Admin, Family Member, Guest, and Child
+- dashboard includes server status and recent photos/files/tasks
+- Family Hub includes calendar, shopping list, birthdays, notes, and documents
+- File Portal is explicitly adapter-backed instead of NAS-replacement storage
+- Integration Layer includes Local Storage, WebDAV, SMB, Docker, SSH, and API adapter concepts
+- settings tables and integration settings are included
+- module registry and enable/disable states are included
+- Server Portal and Automation Portal are represented as separate roadmap tracks
+
+## Final One-Line Definition
+
+**Equinox is a self-hosted digital ecosystem platform that provides a unified interface for family services, productivity tools, media, projects, and NAS resources through standard integrations such as WebDAV, SMB, Docker, and SSH, allowing the underlying infrastructure to evolve without changing the user experience.**
