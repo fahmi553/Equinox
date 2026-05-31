@@ -32,19 +32,33 @@ const storage = multer.diskStorage({
 
 const upload = multer({ storage });
 const permissionKeys = [
-  'canUploadFiles',
-  'canCreateFolders',
   'canCreateNotes',
-  'canCreateReminders',
   'canCreateTasks',
   'canCreateTags',
   'canCreateBookmarks',
-  'canCreateDocumentRecords',
   'canViewAnnouncements'
 ];
-const defaultPermissions = Object.fromEntries(permissionKeys.map((key) => [key, true]));
-const roleNames = ['ADMIN', 'FAMILY'];
-let rolePermissionDefaults = Object.fromEntries(roleNames.map((role) => [role, { ...defaultPermissions }]));
+const defaultPermissions = Object.fromEntries(permissionKeys.map((key) => [key, false]));
+const rolePermissionSeeds = {
+  ADMIN: Object.fromEntries(permissionKeys.map((key) => [key, true])),
+  FAMILY: Object.fromEntries(permissionKeys.map((key) => [key, true])),
+  GUEST: {
+    canCreateNotes: false,
+    canCreateTasks: false,
+    canCreateTags: false,
+    canCreateBookmarks: false,
+    canViewAnnouncements: true
+  },
+  CHILD: {
+    canCreateNotes: true,
+    canCreateTasks: true,
+    canCreateTags: false,
+    canCreateBookmarks: true,
+    canViewAnnouncements: true
+  }
+};
+const roleNames = Object.keys(rolePermissionSeeds);
+let rolePermissionDefaults = Object.fromEntries(roleNames.map((role) => [role, { ...rolePermissionSeeds[role] }]));
 
 app.use(cors({ origin: process.env.FRONTEND_URL || true }));
 app.use(express.json());
@@ -55,7 +69,7 @@ function signToken(user) {
 
 function permissionsFor(user) {
   const roleDefaults = rolePermissionDefaults[user.role] || defaultPermissions;
-  return Object.fromEntries(permissionKeys.map((key) => [key, user[key] ?? roleDefaults[key] ?? true]));
+  return Object.fromEntries(permissionKeys.map((key) => [key, user[key] ?? roleDefaults[key] ?? false]));
 }
 
 function permissionOverridesFor(user) {
@@ -93,13 +107,13 @@ function rolePermissionData(source = {}) {
 }
 
 function normalizePermissions(source = {}) {
-  return Object.fromEntries(permissionKeys.map((key) => [key, source[key] ?? true]));
+  return Object.fromEntries(permissionKeys.map((key) => [key, source[key] ?? false]));
 }
 
 async function loadRolePermissionDefaults() {
   const rows = await prisma.rolePermission.findMany();
   rolePermissionDefaults = {
-    ...Object.fromEntries(roleNames.map((role) => [role, { ...defaultPermissions }])),
+    ...Object.fromEntries(roleNames.map((role) => [role, { ...rolePermissionSeeds[role] }])),
     ...Object.fromEntries(rows.map((row) => [row.role, normalizePermissions(row)]))
   };
 }
@@ -107,7 +121,7 @@ async function loadRolePermissionDefaults() {
 async function ensureRolePermissions() {
   await Promise.all(roleNames.map((role) => prisma.rolePermission.upsert({
     where: { role },
-    create: { role, ...defaultPermissions },
+    create: { role, ...rolePermissionSeeds[role] },
     update: {}
   })));
   await loadRolePermissionDefaults();
@@ -139,6 +153,15 @@ function requireAdmin(req, res, next) {
   }
 
   return next();
+}
+
+async function wouldRemoveLastAdmin(targetUser, nextRole) {
+  if (targetUser.role !== 'ADMIN' || nextRole === 'ADMIN') {
+    return false;
+  }
+
+  const adminCount = await prisma.user.count({ where: { role: 'ADMIN' } });
+  return adminCount <= 1;
 }
 
 function requireCapability(permission) {
@@ -497,31 +520,79 @@ app.get('/health', (_req, res) => {
   res.json({ status: 'ok', service: 'equinox-api' });
 });
 
-app.post('/auth/register', async (req, res) => {
-  const { username, password, displayName } = req.body;
+app.get('/auth/status', async (_req, res) => {
+  const userCount = await prisma.user.count();
+  res.json({
+    hasOwner: userCount > 0,
+    setupRequired: userCount === 0,
+    roles: roleNames
+  });
+});
 
-  if (!username || !password || !displayName) {
+app.get('/auth/me', requireAuth, async (req, res) => {
+  const currentUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+
+  if (!currentUser) {
+    return res.status(401).json({ message: 'User not found.' });
+  }
+
+  res.json({ user: publicUser(currentUser) });
+});
+
+app.post('/auth/setup', async (req, res) => {
+  const { username, password, displayName } = req.body;
+  const cleanUsername = String(username || '').trim();
+  const cleanDisplayName = String(displayName || '').trim();
+
+  if (!cleanUsername || !password || !cleanDisplayName) {
     return res.status(400).json({ message: 'Username, password, and display name are required.' });
   }
 
-  const userCount = await prisma.user.count();
-  const passwordHash = await bcrypt.hash(password, 12);
-  const user = await prisma.user.create({
-    data: {
-      username,
-      displayName,
-      passwordHash,
-      role: userCount === 0 ? 'ADMIN' : 'FAMILY'
-    }
-  });
+  if (String(password).length < 8) {
+    return res.status(400).json({ message: 'Password must be at least 8 characters.' });
+  }
 
-  await logActivity('user.registered', user.id, { username: user.username });
-  res.status(201).json({ token: signToken(user), user: publicUser(user) });
+  const userCount = await prisma.user.count();
+  if (userCount > 0) {
+    return res.status(409).json({ message: 'Equinox is already set up. Ask an admin to create your account.' });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+
+  try {
+    const user = await prisma.user.create({
+      data: {
+        username: cleanUsername,
+        displayName: cleanDisplayName,
+        passwordHash,
+        role: 'ADMIN'
+      }
+    });
+
+    await logActivity('auth.owner_setup', user.id, { username: user.username });
+    res.status(201).json({ token: signToken(user), user: publicUser(user) });
+  } catch (err) {
+    if (err.code === 'P2002') {
+      return res.status(409).json({ message: 'Username is already taken.' });
+    }
+
+    throw err;
+  }
+});
+
+app.post('/auth/register', async (_req, res) => {
+  const userCount = await prisma.user.count();
+
+  if (userCount === 0) {
+    return res.status(410).json({ message: 'Use first-run setup to create the owner account.' });
+  }
+
+  return res.status(403).json({ message: 'Public registration is disabled. Ask an admin to create your account.' });
 });
 
 app.post('/auth/login', async (req, res) => {
   const { username, password } = req.body;
-  const user = await prisma.user.findUnique({ where: { username } });
+  const user = await prisma.user.findUnique({ where: { username: String(username || '').trim() } });
 
   if (!user || !(await bcrypt.compare(password || '', user.passwordHash))) {
     return res.status(401).json({ message: 'Invalid username or password.' });
@@ -531,26 +602,38 @@ app.post('/auth/login', async (req, res) => {
   res.json({ token: signToken(user), user: publicUser(user) });
 });
 
+app.post('/auth/change-password', requireAuth, async (req, res) => {
+  const { currentPassword, newPassword } = req.body;
+
+  if (!currentPassword || !newPassword || String(newPassword).length < 8) {
+    return res.status(400).json({ message: 'Current password and a new password of at least 8 characters are required.' });
+  }
+
+  const currentUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+
+  if (!currentUser || !(await bcrypt.compare(currentPassword, currentUser.passwordHash))) {
+    return res.status(401).json({ message: 'Current password is incorrect.' });
+  }
+
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  await prisma.user.update({ where: { id: currentUser.id }, data: { passwordHash } });
+  await logActivity('auth.password_changed', currentUser.id);
+  res.status(204).end();
+});
+
 app.get('/dashboard', requireAuth, async (req, res) => {
-  const fileWhere = await accessibleFileWhere(req.user);
-  const [profileUser, notes, reminders, tasks, bookmarks, files, storageUsage, users, activity] = await Promise.all([
+  const [profileUser, notes, tasks, bookmarks, users, activity] = await Promise.all([
     prisma.user.findUnique({ where: { id: req.user.id } }),
     prisma.note.count({ where: accessibleNoteWhere(req.user) }),
-    prisma.reminder.count({ where: { ...accessibleReminderWhere(req.user), isCompleted: false } }),
     prisma.task.count({ where: { ...accessibleTaskWhere(req.user), status: { not: 'DONE' } } }),
     prisma.bookmark.count({ where: accessibleBookmarkWhere(req.user) }),
-    prisma.fileAsset.count({ where: fileWhere }),
-    prisma.fileAsset.aggregate({
-      where: fileWhere,
-      _sum: { size: true }
-    }),
     prisma.user.count(),
     prisma.activityLog.findMany({ orderBy: { createdAt: 'desc' }, take: 8, include: { user: true } })
   ]);
 
   res.json({
     user: profileUser ? publicUser(profileUser) : null,
-    totals: { notes, reminders, tasks, bookmarks, files, users, storageBytes: storageUsage._sum.size || 0 },
+    totals: { notes, tasks, bookmarks, users },
     activity: activity.map((item) => ({
       id: item.id,
       action: item.action,
@@ -561,22 +644,13 @@ app.get('/dashboard', requireAuth, async (req, res) => {
 });
 
 app.get('/profile', requireAuth, async (req, res) => {
-  const [profileUser, ownStorage, notes, sharedNotes, reminders, sharedReminders, tasks, sharedTasks, bookmarks, sharedBookmarks, accessibleFiles, accessibleFolders, sharedFiles] = await Promise.all([
+  const [profileUser, notes, sharedNotes, tasks, sharedTasks, bookmarks, sharedBookmarks] = await Promise.all([
     prisma.user.findUnique({ where: { id: req.user.id } }),
-    userStorageStats(req.user.id),
     prisma.note.count({ where: { ownerId: req.user.id } }),
     prisma.note.count({
       where: {
         ...accessibleNoteWhere(req.user),
         ownerId: { not: req.user.id }
-      }
-    }),
-    prisma.reminder.count({ where: { ownerId: req.user.id, isCompleted: false } }),
-    prisma.reminder.count({
-      where: {
-        ...accessibleReminderWhere(req.user),
-        ownerId: { not: req.user.id },
-        isCompleted: false
       }
     }),
     prisma.task.count({ where: { ownerId: req.user.id, status: { not: 'DONE' } } }),
@@ -593,17 +667,6 @@ app.get('/profile', requireAuth, async (req, res) => {
         ...accessibleBookmarkWhere(req.user),
         ownerId: { not: req.user.id }
       }
-    }),
-    prisma.fileAsset.count({ where: await accessibleFileWhere(req.user) }),
-    prisma.folder.count({ where: await accessibleFolderWhere(req.user) }),
-    prisma.fileAsset.findMany({
-      where: {
-        ...await accessibleFileWhere(req.user),
-        ownerId: { not: req.user.id }
-      },
-      orderBy: { uploadedAt: 'desc' },
-      take: 5,
-      include: { folder: true, owner: true }
     })
   ]);
 
@@ -614,36 +677,54 @@ app.get('/profile', requireAuth, async (req, res) => {
   res.json({
     user: publicUser(profileUser),
     own: {
-      ...ownStorage,
       notes,
       sharedNotes,
-      activeReminders: reminders,
-      sharedReminders,
       activeTasks: tasks,
       sharedTasks,
       bookmarks,
       sharedBookmarks
     },
-    accessible: {
-      files: accessibleFiles,
-      folders: accessibleFolders
-    },
-    sharedWithMe: await Promise.all(sharedFiles.map(async (file) => ({
-      id: file.id,
-      originalName: file.originalName,
-      size: file.size,
-      folderPath: await folderPath(file.folder),
-      owner: publicUser(file.owner)
-    })))
+    visible: {
+      sharedTotal: sharedNotes + sharedTasks + sharedBookmarks
+    }
   });
+});
+
+app.patch('/profile', requireAuth, async (req, res) => {
+  const currentUser = await prisma.user.findUnique({ where: { id: req.user.id } });
+
+  if (!currentUser) {
+    return res.status(401).json({ message: 'User not found.' });
+  }
+
+  const data = {};
+  if (typeof req.body.displayName === 'string' && req.body.displayName.trim()) {
+    data.displayName = req.body.displayName.trim();
+  }
+  if (typeof req.body.username === 'string' && req.body.username.trim()) {
+    data.username = req.body.username.trim();
+  }
+
+  if (!Object.keys(data).length) {
+    return res.status(400).json({ message: 'Display name or username is required.' });
+  }
+
+  try {
+    const updated = await prisma.user.update({ where: { id: currentUser.id }, data });
+    await logActivity('user.profile_updated', currentUser.id);
+    res.json({ user: publicUser(updated) });
+  } catch (err) {
+    if (err.code === 'P2002') {
+      return res.status(409).json({ message: 'Username is already taken.' });
+    }
+
+    throw err;
+  }
 });
 
 app.get('/users', requireAuth, requireAdmin, async (_req, res) => {
   const users = await prisma.user.findMany({ orderBy: { createdAt: 'desc' } });
-  res.json(await Promise.all(users.map(async (item) => ({
-    ...publicUser(item),
-    storage: await userStorageStats(item.id)
-  }))));
+  res.json(users.map(publicUser));
 });
 
 app.get('/roles/permissions', requireAuth, requireAdmin, async (_req, res) => {
@@ -754,20 +835,33 @@ app.delete('/announcements/:id', requireAuth, requireAdmin, async (req, res) => 
 
 app.post('/users', requireAuth, requireAdmin, async (req, res) => {
   const { username, password, displayName, role = 'FAMILY' } = req.body;
+  const cleanUsername = String(username || '').trim();
+  const cleanDisplayName = String(displayName || '').trim();
+  const cleanRole = String(role || 'FAMILY').toUpperCase();
 
-  if (!username || !password || !displayName) {
+  if (!cleanUsername || !password || !cleanDisplayName) {
     return res.status(400).json({ message: 'Username, password, and display name are required.' });
   }
 
-  if (!['ADMIN', 'FAMILY'].includes(role)) {
-    return res.status(400).json({ message: 'Role must be ADMIN or FAMILY.' });
+  if (String(password).length < 8) {
+    return res.status(400).json({ message: 'Temporary password must be at least 8 characters.' });
+  }
+
+  if (!roleNames.includes(cleanRole)) {
+    return res.status(400).json({ message: `Role must be one of: ${roleNames.join(', ')}.` });
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
 
   try {
     const user = await prisma.user.create({
-      data: { username, displayName, passwordHash, role, ...permissionData(req.body) }
+      data: {
+        username: cleanUsername,
+        displayName: cleanDisplayName,
+        passwordHash,
+        role: cleanRole,
+        ...permissionData(req.body)
+      }
     });
     await logActivity('user.created', req.user.id, { createdUserId: user.id });
     res.status(201).json(publicUser(user));
@@ -778,6 +872,70 @@ app.post('/users', requireAuth, requireAdmin, async (req, res) => {
 
     throw err;
   }
+});
+
+app.patch('/users/:id', requireAuth, requireAdmin, async (req, res) => {
+  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+
+  if (!target) {
+    return res.status(404).json({ message: 'User not found.' });
+  }
+
+  const data = {};
+  if (typeof req.body.displayName === 'string' && req.body.displayName.trim()) {
+    data.displayName = req.body.displayName.trim();
+  }
+  if (typeof req.body.username === 'string' && req.body.username.trim()) {
+    data.username = req.body.username.trim();
+  }
+  if (typeof req.body.role === 'string') {
+    const role = req.body.role.toUpperCase();
+    if (!roleNames.includes(role)) {
+      return res.status(400).json({ message: `Role must be one of: ${roleNames.join(', ')}.` });
+    }
+    if (target.id === req.user.id && role !== 'ADMIN') {
+      return res.status(400).json({ message: 'You cannot remove your own admin role.' });
+    }
+    if (await wouldRemoveLastAdmin(target, role)) {
+      return res.status(400).json({ message: 'At least one admin account is required.' });
+    }
+    data.role = role;
+  }
+
+  if (!Object.keys(data).length) {
+    return res.status(400).json({ message: 'Nothing to update.' });
+  }
+
+  try {
+    const updated = await prisma.user.update({ where: { id: target.id }, data });
+    await logActivity('user.updated', req.user.id, { updatedUserId: updated.id });
+    res.json(publicUser(updated));
+  } catch (err) {
+    if (err.code === 'P2002') {
+      return res.status(409).json({ message: 'Username is already taken.' });
+    }
+
+    throw err;
+  }
+});
+
+app.post('/users/:id/password', requireAuth, requireAdmin, async (req, res) => {
+  const { password } = req.body;
+
+  if (!password || String(password).length < 8) {
+    return res.status(400).json({ message: 'Temporary password must be at least 8 characters.' });
+  }
+
+  const target = await prisma.user.findUnique({ where: { id: req.params.id } });
+
+  if (!target) {
+    return res.status(404).json({ message: 'User not found.' });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  await prisma.user.update({ where: { id: target.id }, data: { passwordHash } });
+  await logActivity('user.password_reset', req.user.id, { updatedUserId: target.id });
+  res.status(204).end();
 });
 
 app.patch('/users/:id/permissions', requireAuth, requireAdmin, async (req, res) => {
@@ -794,10 +952,7 @@ app.patch('/users/:id/permissions', requireAuth, requireAdmin, async (req, res) 
 
   const updated = await prisma.user.update({ where: { id: target.id }, data });
   await logActivity('user.permissions_updated', req.user.id, { updatedUserId: updated.id });
-  res.json({
-    ...publicUser(updated),
-    storage: await userStorageStats(updated.id)
-  });
+  res.json(publicUser(updated));
 });
 
 app.get('/tags', requireAuth, async (req, res) => {
@@ -970,11 +1125,9 @@ app.get('/search', requireAuth, async (req, res) => {
   const query = String(req.query.q || '').trim();
 
   if (!query) {
-    return res.json({ query, notes: [], reminders: [], tasks: [], bookmarks: [], files: [], documents: [] });
+    return res.json({ query, notes: [], tasks: [], bookmarks: [] });
   }
 
-  const sharedFolderIds = await sharedFolderTreeIds();
-  const fileWhere = await accessibleFileWhere(req.user);
   const noteMatch = {
     OR: [
       { title: { contains: query, mode: 'insensitive' } },
@@ -999,31 +1152,13 @@ app.get('/search', requireAuth, async (req, res) => {
       { tags: { some: { name: { contains: query, mode: 'insensitive' } } } }
     ]
   };
-  const fileMatch = {
-    OR: [
-      { originalName: { contains: query, mode: 'insensitive' } },
-      { mimeType: { contains: query, mode: 'insensitive' } },
-      { tags: { some: { name: { contains: query, mode: 'insensitive' } } } }
-    ]
-  };
 
-  const [notes, reminders, tasks, bookmarks, files, documents] = await Promise.all([
+  const [notes, tasks, bookmarks] = await Promise.all([
     prisma.note.findMany({
       where: { AND: [accessibleNoteWhere(req.user), noteMatch] },
       orderBy: { updatedAt: 'desc' },
       take: 12,
       include: { owner: true, tags: true }
-    }),
-    prisma.reminder.findMany({
-      where: {
-        AND: [
-          accessibleReminderWhere(req.user),
-          { title: { contains: query, mode: 'insensitive' } }
-        ]
-      },
-      orderBy: [{ isCompleted: 'asc' }, { dueAt: 'asc' }],
-      take: 12,
-      include: { owner: true }
     }),
     prisma.task.findMany({
       where: { AND: [accessibleTaskWhere(req.user), taskMatch] },
@@ -1036,37 +1171,12 @@ app.get('/search', requireAuth, async (req, res) => {
       orderBy: { updatedAt: 'desc' },
       take: 12,
       include: { owner: true, tags: true }
-    }),
-    prisma.fileAsset.findMany({
-      where: { AND: [fileWhere, fileMatch, { isImportant: false }] },
-      orderBy: { uploadedAt: 'desc' },
-      take: 12,
-      include: { owner: true, folder: true, tags: true }
-    }),
-    prisma.fileAsset.findMany({
-      where: { AND: [fileWhere, fileMatch, { isImportant: true }] },
-      orderBy: { uploadedAt: 'desc' },
-      take: 12,
-      include: { owner: true, folder: true, tags: true }
     })
   ]);
-
-  const serializeFileSearchResult = async (item) => ({
-    ...item,
-    canEdit: canEditContent(item, req.user),
-    owner: publicUser(item.owner),
-    folderPath: await folderPath(item.folder),
-    shareState: fileShareState(item, sharedFolderIds)
-  });
 
   res.json({
     query,
     notes: notes.map((item) => ({
-      ...item,
-      canEdit: canEditContent(item, req.user),
-      owner: publicUser(item.owner)
-    })),
-    reminders: reminders.map((item) => ({
       ...item,
       canEdit: canEditContent(item, req.user),
       owner: publicUser(item.owner)
@@ -1080,10 +1190,12 @@ app.get('/search', requireAuth, async (req, res) => {
       ...item,
       canEdit: canEditContent(item, req.user),
       owner: publicUser(item.owner)
-    })),
-    files: await Promise.all(files.map(serializeFileSearchResult)),
-    documents: await Promise.all(documents.map(serializeFileSearchResult))
+    }))
   });
+});
+
+app.use(['/reminders', '/files', '/storage', '/folders', '/documents', '/document-records'], requireAuth, (_req, res) => {
+  res.status(410).json({ message: 'This legacy Equinox 1.x feature is disabled in Equinox 2.0.' });
 });
 
 app.get('/notes', requireAuth, async (req, res) => {

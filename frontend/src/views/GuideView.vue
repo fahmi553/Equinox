@@ -1,16 +1,14 @@
 <script setup>
 import {
   Activity,
-  BellRing,
+  Bookmark,
   CircleHelp,
-  Download,
-  FolderOpen,
   LayoutDashboard,
+  ListChecks,
   LogOut,
   NotebookText,
   Search,
   Share2,
-  Upload,
   UserPlus,
   UserRound,
   UsersRound
@@ -22,23 +20,11 @@ const guideSections = [
   {
     title: 'Dashboard',
     icon: LayoutDashboard,
-    summary: 'Start here to see your account, current storage location, totals, and recent activity.',
+    summary: 'Start here to see your account, totals, and recent activity.',
     steps: [
       'Open Dashboard from the top menu.',
       'Check the status box to confirm you are signed in.',
-      'Use the big cards to jump to Files, Notes, Reminders, Family, Guide, or Activity.'
-    ]
-  },
-  {
-    title: 'Files',
-    icon: FolderOpen,
-    summary: 'Keep private files, organize folders, and share selected items with family.',
-    steps: [
-      'Open Files from the top menu.',
-      'Use Create folder to make a new place for files.',
-      'Use Select file, then Upload file to add a file.',
-      'Use Download to save a copy back to your device.',
-      'Use Rename, Move, Share, or Delete when you own the item.'
+      'Use the big cards to jump to Notes, Tasks, Bookmarks, Family, Guide, or Activity.'
     ]
   },
   {
@@ -46,38 +32,37 @@ const guideSections = [
     icon: Share2,
     summary: 'Share only what family members should see. Shared items are read-only for them.',
     steps: [
-      'Click Share on a file to share just that file.',
-      'Click Share on a folder to share that folder and everything inside it.',
-      'Items marked Shared by folder are visible because a parent folder is shared.',
-      'Click Make private to stop sharing an item or folder you own.'
+      'Click Share on a note, task, bookmark, or tag you own.',
+      'Family members can view shared items but cannot edit your private content.',
+      'Click Make private to stop sharing an item you own.'
     ]
   },
   {
     title: 'Search',
     icon: Search,
-    summary: 'Find files and folders without browsing through every folder.',
+    summary: 'Find visible notes, tasks, and bookmarks.',
     steps: [
-      'Open Files.',
-      'Type a file or folder name in Search files and folders.',
+      'Open Search from the top menu.',
+      'Type a word from the item you want to find.',
       'Click Search.',
-      'Click Clear to return to normal folder browsing.'
+      'Open the matching section or saved link.'
     ]
   },
   {
     title: 'Profile',
     icon: UserRound,
-    summary: 'Check your account, role, personal storage, and items shared with you.',
+    summary: 'Check your account, role, and visible family items.',
     steps: [
       'Open Profile from the top menu.',
       'Check your role to understand what your account can manage.',
-      'Review Your storage to see how much space your files use.',
-      'Look at Shared with you to see recent files from family members.'
+      'Review your own notes, tasks, and bookmarks.',
+      'Look at shared counts to understand what family members made visible.'
     ]
   },
   {
     title: 'Notes',
     icon: NotebookText,
-    summary: 'Save quick household information, ideas, or reminders that need more detail.',
+    summary: 'Save quick household information, ideas, or reference details.',
     steps: [
       'Open Notes from the top menu.',
       'Type a title and optional details.',
@@ -86,15 +71,26 @@ const guideSections = [
     ]
   },
   {
-    title: 'Reminders',
-    icon: BellRing,
-    summary: 'Track small tasks and mark them done when finished.',
+    title: 'Tasks',
+    icon: ListChecks,
+    summary: 'Track work that needs action and mark it done when finished.',
     steps: [
-      'Open Reminders from the top menu.',
+      'Open Tasks from the top menu.',
       'Type what needs to be done.',
-      'Add a date and time if needed.',
-      'Click Add reminder.',
-      'Tick the checkbox when the reminder is complete.'
+      'Add details, priority, and a date if needed.',
+      'Click Add task.',
+      'Mark the task done when it is complete.'
+    ]
+  },
+  {
+    title: 'Bookmarks',
+    icon: Bookmark,
+    summary: 'Save useful links so family members can find them later.',
+    steps: [
+      'Open Bookmarks from the top menu.',
+      'Enter a title and link.',
+      'Add notes if the link needs context.',
+      'Share the bookmark when it should be visible to family.'
     ]
   },
   {
@@ -112,7 +108,7 @@ const guideSections = [
   {
     title: 'Activity',
     icon: Activity,
-    summary: 'See recent changes such as logins, uploads, downloads, notes, and reminders.',
+    summary: 'See recent changes such as logins, notes, tasks, bookmarks, and account updates.',
     steps: [
       'Open Activity from the top menu.',
       'Read the newest activity at the top.',
@@ -132,9 +128,8 @@ const guideSections = [
 ];
 
 const quickActions = [
-  { label: 'Upload', icon: Upload, text: 'Add a file into the current folder.' },
-  { label: 'Download', icon: Download, text: 'Save a file copy to your device.' },
   { label: 'Share', icon: Share2, text: 'Let family view an item read-only.' },
+  { label: 'Search', icon: Search, text: 'Find visible notes, tasks, and bookmarks.' },
   { label: 'Create user', icon: UserPlus, text: 'Admin-only family account setup.' }
 ];
 </script>

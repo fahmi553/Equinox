@@ -248,18 +248,18 @@ Equinox should not treat media files or NAS storage as database-owned applicatio
 
 No NAS required.
 
-- [ ] Authentication
-  - [ ] Login
-  - [ ] First admin bootstrap
-  - [ ] Session handling
-- [ ] Identity
-  - [ ] Admin role
-  - [ ] Family Member role
-  - [ ] Guest role
-  - [ ] Child role
-  - [ ] User profiles
-  - [ ] Role permission defaults
-  - [ ] Per-user permission overrides
+- [x] Authentication
+  - [x] Login
+  - [x] First admin bootstrap
+  - [x] Session handling
+- [x] Identity
+  - [x] Admin role
+  - [x] Family Member role
+  - [x] Guest role
+  - [x] Child role
+  - [x] User profiles
+  - [x] Role permission defaults
+  - [x] Per-user permission overrides
 - [ ] Core dashboard
   - [ ] Dashboard shell
   - [ ] Recent activity

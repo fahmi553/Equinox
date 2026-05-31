@@ -1,12 +1,29 @@
 <script setup>
 import { computed, onMounted } from 'vue';
-import { FolderOpen, HardDrive, NotebookText, ShieldCheck, UserRound } from '@lucide/vue';
+import { Bookmark, ListChecks, NotebookText, ShieldCheck, UserRound, UsersRound } from '@lucide/vue';
 import AppPage from '../components/AppPage.vue';
-import { formatBytes, loadProfile, profile } from '../stores/equinox';
+import {
+  changePassword,
+  loadProfile,
+  passwordError,
+  passwordForm,
+  passwordMessage,
+  profile,
+  profileError,
+  profileForm,
+  profileMessage,
+  updateProfile
+} from '../stores/equinox';
 
 const roleText = computed(() => {
   if (profile.value?.user.role === 'ADMIN') {
     return 'Admin accounts can manage family users and help maintain the shared hub.';
+  }
+  if (profile.value?.user.role === 'GUEST') {
+    return 'Guest accounts are for temporary read-only access to shared family information.';
+  }
+  if (profile.value?.user.role === 'CHILD') {
+    return 'Child accounts can use a simpler set of family productivity tools.';
   }
 
   return 'Family accounts can use their own private space and view shared family items.';
@@ -59,26 +76,55 @@ onMounted(loadProfile);
           </div>
         </section>
 
+        <section class="feature-panel">
+          <div class="panel-copy">
+            <h3>Profile details</h3>
+            <p>Keep your name and username clear for family members.</p>
+          </div>
+          <form class="family-form" @submit.prevent="updateProfile">
+            <input v-model="profileForm.displayName" placeholder="Display name" autocomplete="name" />
+            <input v-model="profileForm.username" placeholder="Username" autocomplete="username" />
+            <button class="main-button" type="submit">Save profile</button>
+            <p v-if="profileError" class="storage-error">{{ profileError }}</p>
+            <p v-if="profileMessage" class="success-note">{{ profileMessage }}</p>
+          </form>
+        </section>
+
+        <section class="feature-panel">
+          <div class="panel-copy">
+            <h3>Change password</h3>
+            <p>Update your password without changing your role or family permissions.</p>
+          </div>
+          <form class="family-form" @submit.prevent="changePassword">
+            <input v-model="passwordForm.currentPassword" type="password" placeholder="Current password" autocomplete="current-password" />
+            <input v-model="passwordForm.newPassword" type="password" placeholder="New password" autocomplete="new-password" />
+            <input v-model="passwordForm.confirmPassword" type="password" placeholder="Confirm new password" autocomplete="new-password" />
+            <button class="main-button" type="submit">Update password</button>
+            <p v-if="passwordError" class="storage-error">{{ passwordError }}</p>
+            <p v-if="passwordMessage" class="success-note">{{ passwordMessage }}</p>
+          </form>
+        </section>
+
         <section class="profile-metrics">
           <article>
-            <HardDrive :size="30" :stroke-width="1.8" />
-            <span>Your storage</span>
-            <strong>{{ formatBytes(profile.own.storageBytes) }}</strong>
-          </article>
-          <article>
-            <FolderOpen :size="30" :stroke-width="1.8" />
-            <span>Your files</span>
-            <strong>{{ profile.own.files }}</strong>
-          </article>
-          <article>
-            <FolderOpen :size="30" :stroke-width="1.8" />
-            <span>Your folders</span>
-            <strong>{{ profile.own.folders }}</strong>
-          </article>
-          <article>
             <NotebookText :size="30" :stroke-width="1.8" />
-            <span>Notes</span>
+            <span>Your notes</span>
             <strong>{{ profile.own.notes }}</strong>
+          </article>
+          <article>
+            <ListChecks :size="30" :stroke-width="1.8" />
+            <span>Active tasks</span>
+            <strong>{{ profile.own.activeTasks }}</strong>
+          </article>
+          <article>
+            <Bookmark :size="30" :stroke-width="1.8" />
+            <span>Bookmarks</span>
+            <strong>{{ profile.own.bookmarks }}</strong>
+          </article>
+          <article>
+            <UsersRound :size="30" :stroke-width="1.8" />
+            <span>Shared with you</span>
+            <strong>{{ profile.visible.sharedTotal }}</strong>
           </article>
         </section>
 
@@ -89,32 +135,18 @@ onMounted(loadProfile);
           </div>
           <div class="profile-visible-grid">
             <div class="storage-stat">
-              <span>Accessible files</span>
-              <strong>{{ profile.accessible.files }}</strong>
+              <span>Shared notes</span>
+              <strong>{{ profile.own.sharedNotes }}</strong>
             </div>
             <div class="storage-stat">
-              <span>Accessible folders</span>
-              <strong>{{ profile.accessible.folders }}</strong>
+              <span>Shared tasks</span>
+              <strong>{{ profile.own.sharedTasks }}</strong>
             </div>
             <div class="storage-stat">
-              <span>Active reminders</span>
-              <strong>{{ profile.own.activeReminders }}</strong>
+              <span>Shared bookmarks</span>
+              <strong>{{ profile.own.sharedBookmarks }}</strong>
             </div>
           </div>
-        </section>
-
-        <section class="feature-panel">
-          <div class="panel-copy">
-            <h3>Shared with you</h3>
-            <p>Recent files owned by family members that your account can open.</p>
-          </div>
-          <p v-if="!profile.sharedWithMe.length" class="empty-state">No shared files from family yet.</p>
-          <article v-for="file in profile.sharedWithMe" :key="file.id" class="shared-file-row">
-            <div>
-              <h4>{{ file.originalName }}</h4>
-              <p>{{ formatBytes(file.size) }} / {{ file.folderPath }} / {{ file.owner.displayName }}</p>
-            </div>
-          </article>
         </section>
       </section>
     </section>

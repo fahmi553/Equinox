@@ -10,6 +10,8 @@ datasource db {
 enum Role {
   ADMIN
   FAMILY
+  GUEST
+  CHILD
 }
 
 model User {

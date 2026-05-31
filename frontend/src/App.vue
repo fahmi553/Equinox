@@ -7,10 +7,7 @@ const router = useRouter();
 const showAppNav = computed(() => isAuthed.value);
 const navItems = computed(() => [
   { label: 'Dashboard', to: '/dashboard' },
-  { label: 'Files', to: '/files' },
-  { label: 'Documents', to: '/documents' },
   { label: 'Notes', to: '/notes' },
-  { label: 'Reminders', to: '/reminders' },
   { label: 'Tasks', to: '/tasks' },
   { label: 'Bookmarks', to: '/bookmarks' },
   { label: 'Tags', to: '/tags' },

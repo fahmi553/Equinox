@@ -1,12 +1,8 @@
 <script setup>
 import { computed, onMounted } from 'vue';
 import {
-  BellRing,
   Bookmark,
   CircleHelp,
-  FileText,
-  FolderOpen,
-  HardDrive,
   LayoutDashboard,
   ListChecks,
   NotebookText,
@@ -16,15 +12,11 @@ import {
   UserRound,
   UsersRound
 } from '@lucide/vue';
-import { announcements, categories, currentFolder, dashboard, firstName, isAdmin, loadAll, metricCards, permissions, user } from '../stores/equinox';
+import { announcements, categories, dashboard, firstName, isAdmin, loadAll, metricCards, permissions, user } from '../stores/equinox';
 
 const iconMap = {
-  BellRing,
   Bookmark,
   CircleHelp,
-  FileText,
-  FolderOpen,
-  HardDrive,
   LayoutDashboard,
   ListChecks,
   NotebookText,
@@ -50,7 +42,7 @@ onMounted(loadAll);
       <p class="overline">Welcome back, {{ firstName }}</p>
       <h1>Manage your private ecosystem</h1>
       <p class="hero-copy">
-        Notes, reminders, uploads, users, and logs in a NAS-ready Docker stack.
+        Family tools, productivity, search, and service portals in one self-hosted interface.
       </p>
 
       <div class="search-panel status-panel">
@@ -63,12 +55,12 @@ onMounted(loadAll);
           <strong>{{ user.role }}</strong>
         </label>
         <label>
-          <span>API</span>
-          <strong>Docker proxy online</strong>
+          <span>Version</span>
+          <strong>Equinox 2.0</strong>
         </label>
         <label>
-          <span>Location</span>
-          <strong>{{ currentFolder?.name || 'Root storage' }}</strong>
+          <span>Direction</span>
+          <strong>Ecosystem platform</strong>
         </label>
         <button class="main-button" @click="loadAll">Refresh</button>
       </div>

@@ -10,8 +10,8 @@ import {
   createFamilyUser,
   deleteAnnouncement,
   familyError,
+  familyMessage,
   familyUsers,
-  formatBytes,
   loadAnnouncements,
   loadFamilyUsers,
   loadRolePermissions,
@@ -19,6 +19,8 @@ import {
   rolePermissions,
   saveAnnouncement,
   toggleAnnouncementPin,
+  resetFamilyUserPassword,
+  updateFamilyUser,
   updateRolePermissions,
   updateUserPermissions,
   newFamilyUser,
@@ -27,17 +29,23 @@ import {
 
 const editingAnnouncement = ref(null);
 const pendingDeleteAnnouncement = ref(null);
+const editingMember = ref(null);
+const passwordReset = ref({ userId: '', password: '' });
 const adminCount = computed(() => familyUsers.value.filter((item) => item.role === 'ADMIN').length);
 const familyCount = computed(() => familyUsers.value.filter((item) => item.role === 'FAMILY').length);
+const guestCount = computed(() => familyUsers.value.filter((item) => item.role === 'GUEST').length);
+const childCount = computed(() => familyUsers.value.filter((item) => item.role === 'CHILD').length);
+const roleOptions = [
+  { value: 'FAMILY', label: 'Family' },
+  { value: 'CHILD', label: 'Child' },
+  { value: 'GUEST', label: 'Guest' },
+  { value: 'ADMIN', label: 'Admin' }
+];
 const permissionOptions = [
-  { key: 'canUploadFiles', label: 'Upload files' },
-  { key: 'canCreateFolders', label: 'Create folders' },
   { key: 'canCreateNotes', label: 'Create notes' },
-  { key: 'canCreateReminders', label: 'Create reminders' },
   { key: 'canCreateTasks', label: 'Create tasks' },
   { key: 'canCreateTags', label: 'Create tags' },
   { key: 'canCreateBookmarks', label: 'Create bookmarks' },
-  { key: 'canCreateDocumentRecords', label: 'Create trackers' },
   { key: 'canViewAnnouncements', label: 'View announcements' }
 ];
 
@@ -82,6 +90,33 @@ async function toggleRolePermission(roleItem, key) {
     ...roleItem.permissions,
     [key]: !roleItem.permissions[key]
   });
+}
+
+function beginMemberEdit(member) {
+  editingMember.value = {
+    id: member.id,
+    displayName: member.displayName,
+    username: member.username,
+    role: member.role
+  };
+}
+
+async function submitMemberEdit(member) {
+  const saved = await updateFamilyUser(member, editingMember.value);
+  if (saved) {
+    editingMember.value = null;
+  }
+}
+
+function beginPasswordReset(member) {
+  passwordReset.value = { userId: member.id, password: '' };
+}
+
+async function submitPasswordReset(member) {
+  const saved = await resetFamilyUserPassword(member, passwordReset.value.password);
+  if (saved) {
+    passwordReset.value = { userId: '', password: '' };
+  }
 }
 
 function beginAnnouncementEdit(announcement) {
@@ -145,6 +180,14 @@ onMounted(async () => {
           <strong>{{ familyCount }}</strong>
         </div>
         <div class="storage-stat">
+          <span>Children</span>
+          <strong>{{ childCount }}</strong>
+        </div>
+        <div class="storage-stat">
+          <span>Guests</span>
+          <strong>{{ guestCount }}</strong>
+        </div>
+        <div class="storage-stat">
           <span>Role defaults</span>
           <strong>{{ rolePermissions.length }}</strong>
         </div>
@@ -192,11 +235,11 @@ onMounted(async () => {
           <input v-model="newFamilyUser.username" placeholder="Username" autocomplete="username" />
           <input v-model="newFamilyUser.password" placeholder="Temporary password" type="password" autocomplete="new-password" />
           <select v-model="newFamilyUser.role">
-            <option value="FAMILY">Family</option>
-            <option value="ADMIN">Admin</option>
+            <option v-for="role in roleOptions" :key="role.value" :value="role.value">{{ role.label }}</option>
           </select>
           <button class="main-button" type="submit">Create account</button>
           <p v-if="familyError" class="storage-error">{{ familyError }}</p>
+          <p v-if="familyMessage" class="success-note">{{ familyMessage }}</p>
         </form>
 
         <section class="storage-section">
@@ -211,16 +254,33 @@ onMounted(async () => {
                 <ShieldCheck v-if="member.role === 'ADMIN'" :size="24" :stroke-width="1.9" />
                 <UsersRound v-else :size="24" :stroke-width="1.9" />
               </div>
-              <div>
+              <div v-if="editingMember?.id !== member.id">
                 <h4>{{ member.displayName }}</h4>
                 <p>
                   @{{ member.username }} / Joined {{ joinedDate(member.createdAt) }}
-                  <span v-if="member.storage">
-                    / {{ formatBytes(member.storage.storageBytes) }} / {{ member.storage.files }} files
-                  </span>
                 </p>
               </div>
+              <form v-else class="account-edit-form" @submit.prevent="submitMemberEdit(member)">
+                <input v-model="editingMember.displayName" placeholder="Display name" />
+                <input v-model="editingMember.username" placeholder="Username" />
+                <select v-model="editingMember.role">
+                  <option v-for="role in roleOptions" :key="role.value" :value="role.value">{{ role.label }}</option>
+                </select>
+                <div class="item-actions">
+                  <button type="submit">Save</button>
+                  <button type="button" @click="editingMember = null">Cancel</button>
+                </div>
+              </form>
               <strong :class="['role-pill', member.role.toLowerCase()]">{{ member.role }}</strong>
+              <div class="item-actions account-actions">
+                <button v-if="editingMember?.id !== member.id" @click="beginMemberEdit(member)">Edit account</button>
+                <button v-if="passwordReset.userId !== member.id" @click="beginPasswordReset(member)">Reset password</button>
+              </div>
+              <form v-if="passwordReset.userId === member.id" class="password-reset-form" @submit.prevent="submitPasswordReset(member)">
+                <input v-model="passwordReset.password" type="password" placeholder="New temporary password" autocomplete="new-password" />
+                <button type="submit">Save password</button>
+                <button type="button" @click="passwordReset = { userId: '', password: '' }">Cancel</button>
+              </form>
               <div class="permission-strip">
                 <button
                   v-for="option in permissionOptions"

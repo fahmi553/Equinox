@@ -58,7 +58,7 @@ onMounted(loadTags);
       <aside class="storage-sidebar">
         <div class="panel-copy">
           <h3>Tags</h3>
-          <p>Use short labels to group notes, tasks, files, and important documents.</p>
+          <p>Use short labels to group notes, tasks, and bookmarks.</p>
         </div>
         <div class="storage-stat">
           <span>Visible tags</span>

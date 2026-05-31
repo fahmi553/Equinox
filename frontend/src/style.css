@@ -252,6 +252,35 @@ h1 {
   margin: 0;
 }
 
+.auth-state-card {
+  grid-column: 1 / -1;
+  display: grid;
+  grid-template-columns: 44px minmax(0, 1fr);
+  gap: 12px;
+  align-items: center;
+  padding: 14px;
+  border: 1px solid #ded8e8;
+  border-radius: 7px;
+  background: #f7f4fb;
+  color: #171020;
+  text-align: left;
+}
+
+.auth-state-card svg {
+  color: var(--purple);
+}
+
+.auth-state-card strong,
+.auth-state-card span {
+  display: block;
+}
+
+.auth-state-card span {
+  margin-top: 4px;
+  color: #645c70;
+  font-size: 0.88rem;
+}
+
 .mode-switch {
   display: grid;
   grid-template-columns: 1fr 1fr;
@@ -1108,7 +1137,7 @@ h1 {
 
 .search-result-row {
   display: grid;
-  grid-template-columns: 90px minmax(0, 1fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 16px;
   align-items: center;
   border: 1px solid var(--line);
@@ -1233,7 +1262,8 @@ h1 {
 }
 
 .family-form .main-button,
-.family-form .storage-error {
+.family-form .storage-error,
+.family-form .success-note {
   grid-column: 1 / -1;
 }
 
@@ -1500,6 +1530,12 @@ h1 {
   font-weight: 700;
 }
 
+.success-note {
+  margin: 0;
+  color: #86efac;
+  font-weight: 700;
+}
+
 .readonly-note {
   margin: 0;
   align-self: center;
@@ -1535,6 +1571,28 @@ h1 {
   grid-column: 2 / -1;
   display: flex;
   flex-wrap: wrap;
+  gap: 8px;
+}
+
+.account-edit-form {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.account-edit-form select,
+.account-edit-form .item-actions {
+  grid-column: 1 / -1;
+}
+
+.account-actions {
+  grid-column: 2 / -1;
+}
+
+.password-reset-form {
+  grid-column: 2 / -1;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
   gap: 8px;
 }
 
@@ -1618,6 +1676,14 @@ h1 {
 
 .role-pill.family {
   background: #171020;
+}
+
+.role-pill.guest {
+  background: #475569;
+}
+
+.role-pill.child {
+  background: #15803d;
 }
 
 .folder-card {
@@ -2186,6 +2252,13 @@ footer strong {
   .role-pill {
     justify-self: start;
     grid-column: 2;
+  }
+
+  .account-actions,
+  .account-edit-form,
+  .password-reset-form {
+    grid-column: 2;
+    grid-template-columns: 1fr;
   }
 
   .listing-row img {

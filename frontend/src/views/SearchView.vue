@@ -2,9 +2,6 @@
 import { computed, onMounted } from 'vue';
 import AppPage from '../components/AppPage.vue';
 import {
-  downloadFile,
-  fileExtension,
-  formatBytes,
   globalSearchError,
   globalSearchQuery,
   globalSearchResults,
@@ -18,10 +15,7 @@ const groups = computed(() => {
   return [
     { key: 'notes', label: 'Notes', items: results.notes || [], to: '/notes' },
     { key: 'tasks', label: 'Tasks', items: results.tasks || [], to: '/tasks' },
-    { key: 'bookmarks', label: 'Bookmarks', items: results.bookmarks || [], to: '/bookmarks' },
-    { key: 'documents', label: 'Important documents', items: results.documents || [], to: '/documents' },
-    { key: 'files', label: 'Files', items: results.files || [], to: '/files' },
-    { key: 'reminders', label: 'Reminders', items: results.reminders || [], to: '/reminders' }
+    { key: 'bookmarks', label: 'Bookmarks', items: results.bookmarks || [], to: '/bookmarks' }
   ];
 });
 
@@ -32,25 +26,16 @@ function tagNames(item) {
 }
 
 function itemTitle(group, item) {
-  if (group.key === 'files' || group.key === 'documents') return item.originalName;
   return item.title;
 }
 
 function itemMeta(group, item) {
-  if (group.key === 'files' || group.key === 'documents') {
-    return `${formatBytes(item.size)} / ${item.shareState || 'private'} / ${item.owner.displayName}`;
-  }
-
   if (group.key === 'bookmarks') {
     return `${item.isShared ? 'Shared' : 'Private'} / ${item.owner.displayName} / ${item.url}`;
   }
 
   if (group.key === 'tasks') {
     return `${item.priority} / ${item.status} / ${item.isShared ? 'Shared' : 'Private'} / ${item.owner.displayName}`;
-  }
-
-  if (group.key === 'reminders') {
-    return `${item.isCompleted ? 'Done' : 'Open'} / ${item.isShared ? 'Shared' : 'Private'} / ${item.owner.displayName}`;
   }
 
   return `${item.isShared ? 'Shared' : 'Private'} / ${item.owner.displayName}`;
@@ -60,8 +45,6 @@ function itemBody(group, item) {
   if (group.key === 'notes') return item.body || 'No details yet.';
   if (group.key === 'tasks') return item.details || 'No details yet.';
   if (group.key === 'bookmarks') return item.notes || 'No notes yet.';
-  if (group.key === 'reminders') return item.dueAt ? new Date(item.dueAt).toLocaleString() : 'No due date';
-  if (group.key === 'files' || group.key === 'documents') return item.folderPath || 'Root';
   return '';
 }
 
@@ -77,7 +60,7 @@ onMounted(() => {
     <section class="feature-panel search-workspace">
       <div class="panel-copy">
         <h3>Global Search</h3>
-        <p>Find visible notes, tasks, bookmarks, files, important documents, and reminders.</p>
+        <p>Find visible notes, tasks, and bookmarks.</p>
       </div>
       <form class="storage-search" @submit.prevent="searchEverything">
         <input v-model="globalSearchQuery" autofocus placeholder="Search Equinox" />
@@ -101,9 +84,6 @@ onMounted(() => {
         <p v-if="!group.items.length" class="empty-state">No {{ group.label.toLowerCase() }} found.</p>
 
         <article v-for="item in group.items" :key="item.id" class="search-result-row">
-          <div v-if="group.key === 'files' || group.key === 'documents'" class="file-badge" aria-hidden="true">
-            <strong>{{ fileExtension(item.originalName) }}</strong>
-          </div>
           <div class="search-result-body">
             <h4>{{ itemTitle(group, item) }}</h4>
             <p>{{ itemMeta(group, item) }}</p>
@@ -111,7 +91,6 @@ onMounted(() => {
             <p>{{ itemBody(group, item) }}</p>
             <div class="item-actions">
               <a v-if="group.key === 'bookmarks'" :href="item.url" target="_blank" rel="noreferrer">Open link</a>
-              <button v-else-if="group.key === 'files' || group.key === 'documents'" @click="downloadFile(item)">Download</button>
               <RouterLink v-else :to="group.to">Open section</RouterLink>
             </div>
           </div>
