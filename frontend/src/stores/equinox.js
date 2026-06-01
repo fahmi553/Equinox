@@ -9,9 +9,17 @@ export const authStatus = ref({ hasOwner: true, setupRequired: false, roles: [] 
 export const authLoading = ref(false);
 export const sessionChecked = ref(false);
 export const dashboard = ref(null);
+export const activity = ref([]);
+export const modules = ref([]);
+export const settings = ref(null);
 export const familyUsers = ref([]);
 export const rolePermissions = ref([]);
 export const announcements = ref([]);
+export const chatMessages = ref([]);
+export const chatUsers = ref([]);
+export const selectedChatUserId = ref('');
+export const notifications = ref([]);
+export const unreadNotificationCount = ref(0);
 export const profile = ref(null);
 export const notes = ref([]);
 export const tasks = ref([]);
@@ -24,6 +32,7 @@ export const newTask = ref({ title: '', details: '', priority: 'NORMAL', status:
 export const newTag = ref({ name: '', color: '#7c3aed', isShared: false });
 export const newBookmark = ref({ title: '', url: '', notes: '', isShared: false, tagIds: [] });
 export const newAnnouncement = ref({ title: '', body: '', isPinned: false, expiresAt: '' });
+export const newChatMessage = ref('');
 export const defaultPermissions = {
   canCreateNotes: true,
   canCreateTasks: true,
@@ -46,11 +55,17 @@ export const profileError = ref('');
 export const profileMessage = ref('');
 export const passwordError = ref('');
 export const passwordMessage = ref('');
+export const noteError = ref('');
 export const taskError = ref('');
 export const tagError = ref('');
 export const bookmarkError = ref('');
 export const globalSearchError = ref('');
 export const announcementError = ref('');
+export const chatError = ref('');
+export const moduleError = ref('');
+export const moduleMessage = ref('');
+export const settingsError = ref('');
+export const settingsMessage = ref('');
 
 export const isAuthed = computed(() => Boolean(token.value));
 export const isAdmin = computed(() => user.value?.role === 'ADMIN');
@@ -62,26 +77,152 @@ export const permissions = computed(() => {
   return { ...defaultPermissions, ...(roleDefault || {}), ...(user.value?.permissions || {}) };
 });
 export const firstName = computed(() => user.value?.displayName?.split(' ')[0] || 'Family');
+export const moduleMap = computed(() => Object.fromEntries(
+  modules.value.map((item) => [item.key, item])
+));
+export const preferences = computed(() => settings.value?.preferences || {
+  startPage: '/dashboard',
+  compactMode: false,
+  dateFormat: 'locale'
+});
+export const defaultStartPage = computed(() => preferences.value.startPage || '/dashboard');
+export const platformName = computed(() => settings.value?.system?.platformName || 'Equinox');
+export const householdName = computed(() => settings.value?.system?.householdName || 'Family Workspace');
 
 export const categories = [
-  { label: 'Dashboard', value: 'Live hub', icon: 'LayoutDashboard', to: '/dashboard' },
-  { label: 'Notes', value: 'Quick memory', icon: 'NotebookText', to: '/notes' },
-  { label: 'Tasks', value: 'To-do board', icon: 'ListChecks', to: '/tasks' },
-  { label: 'Bookmarks', value: 'Saved links', icon: 'Bookmark', to: '/bookmarks' },
-  { label: 'Tags', value: 'Organize items', icon: 'Tags', to: '/tags' },
-  { label: 'Search', value: 'Find anything', icon: 'Search', to: '/search' },
-  { label: 'Profile', value: 'Your account', icon: 'UserRound', to: '/profile' },
-  { label: 'Family', value: 'Accounts', icon: 'UsersRound', to: '/family', adminOnly: true },
-  { label: 'Guide', value: 'How to use', icon: 'CircleHelp', to: '/guide' },
-  { label: 'Activity', value: 'Recent history', icon: 'SquareActivity', to: '/activity' }
+  { moduleKey: 'dashboard', label: 'Dashboard', value: 'Live hub', icon: 'LayoutDashboard', to: '/dashboard' },
+  { moduleKey: 'notes', label: 'Notes', value: 'Quick memory', icon: 'NotebookText', to: '/notes' },
+  { moduleKey: 'tasks', label: 'Tasks', value: 'To-do board', icon: 'ListChecks', to: '/tasks' },
+  { moduleKey: 'bookmarks', label: 'Bookmarks', value: 'Saved links', icon: 'Bookmark', to: '/bookmarks' },
+  { moduleKey: 'tags', label: 'Tags', value: 'Organize items', icon: 'Tags', to: '/tags' },
+  { moduleKey: 'chat', label: 'Chat', value: 'Family messages', icon: 'MessageCircle', to: '/chat' },
+  { moduleKey: 'search', label: 'Search', value: 'Find anything', icon: 'Search', to: '/search' },
+  { moduleKey: 'profile', label: 'Profile', value: 'Your account', icon: 'UserRound', to: '/profile' },
+  { moduleKey: 'family', label: 'Family', value: 'Accounts', icon: 'UsersRound', to: '/family', adminOnly: true },
+  { moduleKey: 'guide', label: 'Guide', value: 'How to use', icon: 'CircleHelp', to: '/guide' },
+  { moduleKey: 'activity', label: 'Activity', value: 'Recent history', icon: 'SquareActivity', to: '/activity' }
 ];
 
 export const metricCards = computed(() => [
-  { label: 'Notes', value: dashboard.value?.totals.notes ?? notes.value.length, icon: 'NotebookText' },
-  { label: 'Tasks', value: dashboard.value?.totals.tasks ?? tasks.value.length, icon: 'ListChecks' },
-  { label: 'Bookmarks', value: dashboard.value?.totals.bookmarks ?? bookmarks.value.length, icon: 'Bookmark' },
+  { moduleKey: 'notes', label: 'Notes', value: dashboard.value?.totals.notes ?? notes.value.length, icon: 'NotebookText' },
+  { moduleKey: 'tasks', label: 'Tasks', value: dashboard.value?.totals.tasks ?? tasks.value.length, icon: 'ListChecks' },
+  { moduleKey: 'bookmarks', label: 'Bookmarks', value: dashboard.value?.totals.bookmarks ?? bookmarks.value.length, icon: 'Bookmark' },
   { label: 'Family', value: dashboard.value?.totals.users ?? familyUsers.value.length, icon: 'UsersRound' }
-]);
+].filter((metric) => !metric.moduleKey || isModuleEnabled(metric.moduleKey)));
+
+const activityLabels = {
+  'auth.owner_setup': 'Owner account created',
+  'auth.password_changed': 'Password changed',
+  'user.login': 'Signed in',
+  'user.created': 'Account created',
+  'user.updated': 'Account updated',
+  'user.profile_updated': 'Profile updated',
+  'user.password_reset': 'Account password reset',
+  'user.permissions_updated': 'Account permissions updated',
+  'role.permissions_updated': 'Role defaults updated',
+  'module.updated': 'Module setting updated',
+  'settings.system_updated': 'System settings updated',
+  'settings.preferences_updated': 'Preferences updated',
+  'settings.integration_updated': 'Integration settings updated',
+  'announcement.created': 'Announcement posted',
+  'announcement.updated': 'Announcement updated',
+  'announcement.deleted': 'Announcement deleted',
+  'note.created': 'Note created',
+  'note.updated': 'Note updated',
+  'note.deleted': 'Note deleted',
+  'task.created': 'Task created',
+  'task.updated': 'Task updated',
+  'task.deleted': 'Task deleted',
+  'tag.created': 'Tag created',
+  'tag.updated': 'Tag updated',
+  'tag.deleted': 'Tag deleted',
+  'bookmark.created': 'Bookmark created',
+  'bookmark.updated': 'Bookmark updated',
+  'bookmark.deleted': 'Bookmark deleted',
+  'chat.message_sent': 'Chat message sent'
+};
+
+export function activityLabel(action) {
+  return activityLabels[action] || String(action || '').replaceAll(/[._]/g, ' ');
+}
+
+function activitySubject(item) {
+  const metadata = item.metadata || {};
+  return metadata.title || metadata.name || metadata.displayName || metadata.username || '';
+}
+
+function clientSummary(userAgent = '') {
+  if (!userAgent || userAgent === 'unknown') return 'unknown device';
+
+  const browser = userAgent.includes('Edg/') ? 'Edge'
+    : userAgent.includes('Chrome/') ? 'Chrome'
+      : userAgent.includes('Firefox/') ? 'Firefox'
+        : userAgent.includes('Safari/') ? 'Safari'
+          : 'browser';
+  const device = userAgent.includes('Windows') ? 'Windows'
+    : userAgent.includes('Android') ? 'Android'
+      : /iPhone|iPad/.test(userAgent) ? 'iOS'
+        : userAgent.includes('Macintosh') ? 'macOS'
+          : userAgent.includes('Linux') ? 'Linux'
+            : 'device';
+
+  return `${browser} on ${device}`;
+}
+
+export function activityDetail(item) {
+  const metadata = item.metadata || {};
+  const actor = item.user?.displayName || 'System';
+  const subject = activitySubject(item);
+
+  if (item.action === 'user.login') {
+    return `${actor} signed in from ${metadata.ipAddress || 'unknown IP'} using ${clientSummary(metadata.userAgent)}.`;
+  }
+  if (item.action === 'user.created') {
+    return `${actor} created ${metadata.displayName || metadata.username || 'an account'} with the ${metadata.role || 'family'} role.`;
+  }
+  if (item.action === 'user.updated') {
+    return `${actor} updated ${metadata.displayName || metadata.username || 'an account'}${metadata.role ? ` (${metadata.role})` : ''}.`;
+  }
+  if (item.action === 'user.password_reset') {
+    return `${actor} reset the password for ${metadata.displayName || metadata.username || 'an account'}.`;
+  }
+  if (item.action === 'user.permissions_updated') {
+    const changes = (metadata.changedPermissions || []).join(', ');
+    return `${actor} updated permissions for ${metadata.displayName || metadata.username || 'an account'}${changes ? `: ${changes}` : ''}.`;
+  }
+  if (item.action === 'role.permissions_updated') {
+    return `${actor} changed the default permissions for the ${metadata.role || 'selected'} role.`;
+  }
+  if (item.action === 'module.updated') {
+    return `${actor} ${metadata.isEnabled ? 'enabled' : 'disabled'} the ${metadata.label || metadata.key || 'selected'} module.`;
+  }
+  if (item.action === 'settings.system_updated') {
+    return `${actor} updated the Equinox platform settings.`;
+  }
+  if (item.action === 'settings.preferences_updated') {
+    return `${actor} updated their personal Equinox preferences.`;
+  }
+  if (item.action === 'settings.integration_updated') {
+    return `${actor} updated the ${metadata.label || metadata.key || 'selected'} integration settings.`;
+  }
+  if (item.action === 'auth.password_changed') {
+    return `${actor} changed their account password.`;
+  }
+  if (item.action === 'auth.owner_setup') {
+    return `${actor} completed the initial Equinox owner setup.`;
+  }
+  if (item.action === 'user.profile_updated') {
+    return `${actor} updated their profile details.`;
+  }
+  if (item.action === 'chat.message_sent') {
+    return `${actor} sent a household chat message.`;
+  }
+  if (subject) {
+    return `${actor}: ${subject}`;
+  }
+
+  return `${actor} performed this action.`;
+}
 
 export async function api(path, options = {}) {
   const response = await fetch(`${apiBase}${path}`, {
@@ -150,10 +291,18 @@ export function logout() {
   token.value = '';
   user.value = null;
   dashboard.value = null;
+  activity.value = [];
+  modules.value = [];
+  settings.value = null;
   profile.value = null;
   familyUsers.value = [];
   rolePermissions.value = [];
   announcements.value = [];
+  chatMessages.value = [];
+  chatUsers.value = [];
+  selectedChatUserId.value = '';
+  notifications.value = [];
+  unreadNotificationCount.value = 0;
   notes.value = [];
   tasks.value = [];
   tags.value = [];
@@ -174,6 +323,12 @@ export async function refreshSession() {
     user.value = result.user;
     localStorage.setItem('equinox.user', JSON.stringify(result.user));
     await loadAuthStatus();
+    await loadModules();
+    await loadSettings();
+    if (isModuleEnabled('announcements')) {
+      await loadAnnouncements();
+    }
+    await loadNotifications();
     sessionChecked.value = true;
     return true;
   } catch {
@@ -186,7 +341,103 @@ export async function refreshSession() {
 
 export async function loadAll() {
   if (!token.value) return;
-  await Promise.all([loadDashboard(), loadAnnouncements(), loadTags(), loadNotes(), loadTasks(), loadBookmarks()]);
+  await loadModules();
+  await loadSettings();
+  await Promise.all([
+    loadDashboard(),
+    loadNotifications(),
+    isModuleEnabled('announcements') ? loadAnnouncements() : Promise.resolve(announcements.value = []),
+    isModuleEnabled('tags') ? loadTags() : Promise.resolve(tags.value = []),
+    isModuleEnabled('notes') ? loadNotes() : Promise.resolve(notes.value = []),
+    isModuleEnabled('tasks') ? loadTasks() : Promise.resolve(tasks.value = []),
+    isModuleEnabled('bookmarks') ? loadBookmarks() : Promise.resolve(bookmarks.value = [])
+  ]);
+}
+
+export function isModuleEnabled(key) {
+  return moduleMap.value[key]?.isEnabled !== false;
+}
+
+export async function loadModules() {
+  modules.value = await api('/modules');
+}
+
+export async function updateModuleSetting(module, isEnabled) {
+  moduleError.value = '';
+  moduleMessage.value = '';
+
+  try {
+    await api(`/modules/${module.key}`, {
+      method: 'PATCH',
+      body: JSON.stringify({ isEnabled })
+    });
+    await loadAll();
+    moduleMessage.value = `${module.label} ${isEnabled ? 'enabled' : 'disabled'}.`;
+    return true;
+  } catch (err) {
+    moduleError.value = err.message;
+    return false;
+  }
+}
+
+export async function loadSettings() {
+  settings.value = await api('/settings');
+}
+
+export async function updateSystemSettings(data) {
+  settingsError.value = '';
+  settingsMessage.value = '';
+
+  try {
+    const result = await api('/settings/system', {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    });
+    settings.value.system = result.system;
+    settingsMessage.value = 'System settings updated.';
+    return true;
+  } catch (err) {
+    settingsError.value = err.message;
+    return false;
+  }
+}
+
+export async function updatePreferences(data) {
+  settingsError.value = '';
+  settingsMessage.value = '';
+
+  try {
+    const result = await api('/settings/preferences', {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    });
+    settings.value.preferences = result.preferences;
+    settingsMessage.value = 'Preferences updated.';
+    return true;
+  } catch (err) {
+    settingsError.value = err.message;
+    return false;
+  }
+}
+
+export async function updateIntegrationSetting(integration, data) {
+  settingsError.value = '';
+  settingsMessage.value = '';
+
+  try {
+    const result = await api(`/settings/integrations/${integration.key}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    });
+    settings.value.integrations = settings.value.integrations.map((item) => (
+      item.key === integration.key ? result.integration : item
+    ));
+    settingsMessage.value = `${integration.label} settings updated.`;
+    return true;
+  } catch (err) {
+    settingsError.value = err.message;
+    return false;
+  }
 }
 
 export async function loadDashboard() {
@@ -197,20 +448,95 @@ export async function loadDashboard() {
   }
 }
 
+export async function loadActivity() {
+  activity.value = await api('/activity');
+}
+
+export async function loadNotifications() {
+  const result = await api('/notifications');
+  notifications.value = result.notifications;
+  unreadNotificationCount.value = result.unreadCount;
+}
+
+export async function markNotificationRead(notification) {
+  if (notification.isRead) return;
+  await api(`/notifications/${notification.id}/read`, { method: 'PATCH' });
+  await loadNotifications();
+}
+
+export async function markAllNotificationsRead() {
+  await api('/notifications/read-all', { method: 'PATCH' });
+  await loadNotifications();
+}
+
+export async function loadChatMessages() {
+  const params = selectedChatUserId.value ? `?recipientId=${encodeURIComponent(selectedChatUserId.value)}` : '';
+  await loadOptionalCollection(`/chat/messages${params}`, chatMessages);
+}
+
+export async function loadChatUsers() {
+  await loadOptionalCollection('/chat/users', chatUsers);
+}
+
+export async function sendChatMessage() {
+  chatError.value = '';
+  const body = newChatMessage.value.trim();
+  if (!body) {
+    chatError.value = 'Write a message first.';
+    return false;
+  }
+
+  try {
+    await api('/chat/messages', {
+      method: 'POST',
+      body: JSON.stringify({ body, recipientId: selectedChatUserId.value || null })
+    });
+    newChatMessage.value = '';
+    await loadChatMessages();
+    return true;
+  } catch (err) {
+    chatError.value = err.message;
+    return false;
+  }
+}
+
+export async function deleteChatMessage(message) {
+  chatError.value = '';
+  try {
+    await api(`/chat/messages/${message.id}`, { method: 'DELETE' });
+    await loadChatMessages();
+  } catch (err) {
+    chatError.value = err.message;
+  }
+}
+
+async function loadOptionalCollection(path, collection) {
+  try {
+    collection.value = await api(path);
+  } catch (err) {
+    if (err.status === 404) {
+      collection.value = [];
+      return;
+    }
+
+    throw err;
+  }
+}
+
 export async function loadNotes() {
-  notes.value = await api('/notes');
+  await loadOptionalCollection('/notes', notes);
 }
 
 export async function loadTasks() {
-  tasks.value = await api('/tasks');
+  await loadOptionalCollection('/tasks', tasks);
 }
 
 export async function loadTags() {
-  tags.value = await api('/tags');
+  await loadOptionalCollection('/tags', tags);
 }
 
 export async function loadBookmarks() {
-  bookmarks.value = await api('/bookmarks');
+  await loadOptionalCollection('/bookmarks', bookmarks);
 }
 
 export async function searchEverything() {
@@ -244,7 +570,7 @@ export async function loadAnnouncements(includeExpired = false) {
   try {
     announcements.value = await api(`/announcements${includeExpired ? '?includeExpired=true' : ''}`);
   } catch (err) {
-    if (err.status === 403) {
+    if (err.status === 403 || err.status === 404) {
       announcements.value = [];
       return;
     }
@@ -452,7 +778,10 @@ function announcementPayload(source) {
 
 export async function createAnnouncement() {
   announcementError.value = '';
-  if (!newAnnouncement.value.title.trim() || !newAnnouncement.value.body.trim()) return false;
+  if (!newAnnouncement.value.title.trim() || !newAnnouncement.value.body.trim()) {
+    announcementError.value = 'Title and message are required.';
+    return false;
+  }
 
   try {
     await api('/announcements', {
@@ -503,7 +832,10 @@ export async function deleteAnnouncement(announcement) {
 
 export async function createTag() {
   tagError.value = '';
-  if (!newTag.value.name.trim()) return false;
+  if (!newTag.value.name.trim()) {
+    tagError.value = 'Tag name is required.';
+    return false;
+  }
 
   try {
     await api('/tags', { method: 'POST', body: JSON.stringify(newTag.value) });
@@ -550,14 +882,19 @@ function bookmarkPayload(source) {
 
 export async function createBookmark() {
   bookmarkError.value = '';
-  if (!newBookmark.value.title.trim() || !newBookmark.value.url.trim()) return;
+  if (!newBookmark.value.title.trim() || !newBookmark.value.url.trim()) {
+    bookmarkError.value = 'Title and URL are required.';
+    return false;
+  }
 
   try {
     await api('/bookmarks', { method: 'POST', body: JSON.stringify(bookmarkPayload(newBookmark.value)) });
     newBookmark.value = { title: '', url: '', notes: '', isShared: false, tagIds: [] };
     await Promise.all([loadBookmarks(), loadDashboard(), loadProfile()]);
+    return true;
   } catch (err) {
     bookmarkError.value = err.message;
+    return false;
   }
 }
 
@@ -595,18 +932,37 @@ export async function deleteBookmark(bookmark) {
 }
 
 export async function createNote() {
-  if (!newNote.value.title) return;
-  await api('/notes', { method: 'POST', body: JSON.stringify(newNote.value) });
-  newNote.value = { title: '', body: '', isShared: false, tagIds: [] };
-  await Promise.all([loadNotes(), loadDashboard(), loadProfile()]);
+  noteError.value = '';
+  if (!newNote.value.title.trim()) {
+    noteError.value = 'Title is required.';
+    return false;
+  }
+
+  try {
+    await api('/notes', { method: 'POST', body: JSON.stringify(newNote.value) });
+    newNote.value = { title: '', body: '', isShared: false, tagIds: [] };
+    await Promise.all([loadNotes(), loadDashboard(), loadProfile()]);
+    return true;
+  } catch (err) {
+    noteError.value = err.message;
+    return false;
+  }
 }
 
 export async function updateNote(note, data) {
-  await api(`/notes/${note.id}`, {
-    method: 'PATCH',
-    body: JSON.stringify(data)
-  });
-  await Promise.all([loadNotes(), loadDashboard(), loadProfile()]);
+  noteError.value = '';
+
+  try {
+    await api(`/notes/${note.id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    });
+    await Promise.all([loadNotes(), loadDashboard(), loadProfile()]);
+    return true;
+  } catch (err) {
+    noteError.value = err.message;
+    return false;
+  }
 }
 
 export async function toggleNoteShare(note) {
@@ -614,8 +970,14 @@ export async function toggleNoteShare(note) {
 }
 
 export async function deleteNote(note) {
-  await api(`/notes/${note.id}`, { method: 'DELETE' });
-  await Promise.all([loadNotes(), loadDashboard(), loadProfile()]);
+  noteError.value = '';
+
+  try {
+    await api(`/notes/${note.id}`, { method: 'DELETE' });
+    await Promise.all([loadNotes(), loadDashboard(), loadProfile()]);
+  } catch (err) {
+    noteError.value = err.message;
+  }
 }
 
 function taskPayload(source) {
@@ -632,14 +994,19 @@ function taskPayload(source) {
 
 export async function createTask() {
   taskError.value = '';
-  if (!newTask.value.title.trim()) return;
+  if (!newTask.value.title.trim()) {
+    taskError.value = 'Title is required.';
+    return false;
+  }
 
   try {
     await api('/tasks', { method: 'POST', body: JSON.stringify(taskPayload(newTask.value)) });
     newTask.value = { title: '', details: '', priority: 'NORMAL', status: 'OPEN', dueAt: '', isShared: false, tagIds: [] };
     await Promise.all([loadTasks(), loadDashboard(), loadProfile()]);
+    return true;
   } catch (err) {
     taskError.value = err.message;
+    return false;
   }
 }
 

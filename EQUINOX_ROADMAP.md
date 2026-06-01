@@ -104,6 +104,8 @@ Shared family space.
 - shared notes
 - important documents
 - shared tasks
+- household chat
+- in-app notifications
 
 ### Module D - File Portal
 
@@ -260,46 +262,56 @@ No NAS required.
   - [x] User profiles
   - [x] Role permission defaults
   - [x] Per-user permission overrides
-- [ ] Core dashboard
-  - [ ] Dashboard shell
-  - [ ] Recent activity
-  - [ ] Announcements widget
-  - [ ] Task summary
-  - [ ] Service status placeholder
-- [ ] Productivity basics
-  - [ ] Notes
-  - [ ] Tasks
-  - [ ] Tags
-  - [ ] Bookmarks
-  - [ ] Announcements
-- [ ] Activity logs
+- [x] Core dashboard
+  - [x] Dashboard shell
+  - [x] Recent activity
+  - [x] Announcements widget
+  - [x] Task summary
+  - [x] Service status placeholder
+- [x] Productivity basics
+  - [x] Notes
+  - [x] Tasks
+  - [x] Tags
+  - [x] Bookmarks
+  - [x] Announcements
+- [x] Family communication
+  - [x] Household chat
+  - [x] Personal one-to-one chat
+  - [x] Custom chat deletion confirmation
+  - [x] Personal notification inbox
+  - [x] Unread notification badge
+  - [x] Chat and announcement notifications
+- [x] Activity logs
+  - [x] Admin-only sensitive account history
+  - [x] Private owner activity filtering
+  - [x] Shared household activity filtering
 
 ### Phase 2 - Portal Framework
 
 Still no NAS required.
 
-- [ ] App shell
-  - [ ] Sidebar navigation
-  - [ ] Mobile navigation
-  - [ ] Module landing pages
-  - [ ] Consistent empty states
-  - [ ] Practical family-friendly layouts
-- [ ] Module system
-  - [ ] Module registry
-  - [ ] Module enable/disable settings
-  - [ ] Module health states
-  - [ ] Route guards by permission
-- [ ] Unified search
-  - [ ] Search notes
-  - [ ] Search tasks
-  - [ ] Search bookmarks
-  - [ ] Search announcements
-  - [ ] Search tags
-  - [ ] Prepare adapter-backed search results
-- [ ] Settings foundation
-  - [ ] System settings table
-  - [ ] Integration settings table
-  - [ ] User preferences
+- [x] App shell
+  - [x] Sidebar navigation
+  - [x] Mobile navigation
+  - [x] Module landing pages
+  - [x] Consistent empty states
+  - [x] Practical family-friendly layouts
+- [x] Module system
+  - [x] Module registry
+  - [x] Module enable/disable settings
+  - [x] Module health states
+  - [x] Route guards by permission
+- [x] Unified search
+  - [x] Search notes
+  - [x] Search tasks
+  - [x] Search bookmarks
+  - [x] Search announcements
+  - [x] Search tags
+  - [x] Prepare adapter-backed search results
+- [x] Settings foundation
+  - [x] System settings table
+  - [x] Integration settings table
+  - [x] User preferences
 
 ### Phase 3 - Storage Integration
 
@@ -378,7 +390,7 @@ Connect Equinox to UGOS through standard integrations.
   - [ ] Docker project grouping
 - [ ] Automation Portal
   - [ ] Scheduled jobs
-  - [ ] Notifications
+  - [ ] Automated notification rules
   - [ ] Cleanup workflows
   - [ ] Backup workflow UI
 

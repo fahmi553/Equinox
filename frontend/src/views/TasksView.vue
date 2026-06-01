@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import AppPage from '../components/AppPage.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import TagChips from '../components/TagChips.vue';
 import {
   createTask,
   deleteTask,
@@ -20,6 +21,18 @@ import {
 const editingTask = ref(null);
 const pendingDelete = ref(null);
 const activeTagId = ref('');
+const priorityRank = { HIGH: 0, NORMAL: 1, LOW: 2 };
+
+function compareTasks(left, right) {
+  const priorityDifference = (priorityRank[left.priority] ?? 1) - (priorityRank[right.priority] ?? 1);
+  if (priorityDifference) return priorityDifference;
+
+  const leftDueAt = left.dueAt ? new Date(left.dueAt).getTime() : Number.POSITIVE_INFINITY;
+  const rightDueAt = right.dueAt ? new Date(right.dueAt).getTime() : Number.POSITIVE_INFINITY;
+  if (leftDueAt !== rightDueAt) return leftDueAt - rightDueAt;
+
+  return new Date(right.updatedAt).getTime() - new Date(left.updatedAt).getTime();
+}
 
 const todayStart = computed(() => {
   const date = new Date();
@@ -39,14 +52,14 @@ const visibleTasks = computed(() => {
 });
 const activeTasks = computed(() => visibleTasks.value.filter((task) => task.status !== 'DONE'));
 const sharedTasks = computed(() => visibleTasks.value.filter((task) => task.isShared));
-const overdueTasks = computed(() => activeTasks.value.filter((task) => task.dueAt && new Date(task.dueAt) < todayStart.value));
+const overdueTasks = computed(() => activeTasks.value.filter((task) => task.dueAt && new Date(task.dueAt) < todayStart.value).sort(compareTasks));
 const todayTasks = computed(() => activeTasks.value.filter((task) => {
   if (!task.dueAt) return false;
   const due = new Date(task.dueAt);
   return due >= todayStart.value && due < tomorrowStart.value;
-}));
-const upcomingTasks = computed(() => activeTasks.value.filter((task) => !task.dueAt || new Date(task.dueAt) >= tomorrowStart.value));
-const doneTasks = computed(() => visibleTasks.value.filter((task) => task.status === 'DONE'));
+}).sort(compareTasks));
+const upcomingTasks = computed(() => activeTasks.value.filter((task) => !task.dueAt || new Date(task.dueAt) >= tomorrowStart.value).sort(compareTasks));
+const doneTasks = computed(() => visibleTasks.value.filter((task) => task.status === 'DONE').sort(compareTasks));
 
 const taskGroups = computed(() => [
   { key: 'overdue', label: 'Overdue', items: overdueTasks.value },
@@ -112,10 +125,6 @@ async function confirmDelete() {
   await deleteTask(task);
 }
 
-function tagNames(task) {
-  return (task.tags || []).map((tag) => tag.name).join(', ');
-}
-
 onMounted(async () => {
   await Promise.all([loadTasks(), loadTags()]);
 });
@@ -175,7 +184,7 @@ onMounted(async () => {
           <div v-if="tags.length" class="tag-picker">
             <label v-for="tag in tags" :key="tag.id">
               <input v-model="newTask.tagIds" type="checkbox" :value="tag.id" />
-              <span class="tag-chip" :style="{ borderColor: tag.color }">{{ tag.name }}</span>
+              <TagChips :tags="[tag]" />
             </label>
           </div>
           <button class="main-button" @click="createTask">Add task</button>
@@ -201,6 +210,7 @@ onMounted(async () => {
               v-for="tag in tags"
               :key="tag.id"
               :class="{ active: activeTagId === tag.id }"
+              :style="{ '--tag-color': tag.color }"
               @click="activeTagId = tag.id"
             >
               {{ tag.name }}
@@ -222,7 +232,7 @@ onMounted(async () => {
                   <small>{{ task.priority }} / {{ task.status }} / {{ formatDue(task.dueAt) }} / {{ task.isShared ? 'Shared' : 'Private' }} / {{ task.owner.displayName }}</small>
                 </span>
               </label>
-              <p v-if="task.tags?.length" class="tag-line">{{ tagNames(task) }}</p>
+              <TagChips v-if="task.tags?.length" :tags="task.tags" />
               <p v-if="task.details">{{ task.details }}</p>
 
               <div v-if="task.canEdit" class="item-actions">
@@ -256,7 +266,7 @@ onMounted(async () => {
               <div v-if="tags.length" class="tag-picker">
                 <label v-for="tag in tags" :key="tag.id">
                   <input v-model="editingTask.tagIds" type="checkbox" :value="tag.id" />
-                  <span class="tag-chip" :style="{ borderColor: tag.color }">{{ tag.name }}</span>
+                  <TagChips :tags="[tag]" />
                 </label>
               </div>
               <div class="item-actions">

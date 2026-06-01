@@ -1,37 +1,77 @@
 <script setup>
 import { computed, onMounted } from 'vue';
 import {
+  AlertCircle,
   Bookmark,
+  Bell,
+  CheckCircle2,
   CircleHelp,
+  Clapperboard,
+  Clock3,
+  Database,
+  HardDrive,
+  Images,
   LayoutDashboard,
   ListChecks,
+  MessageCircle,
   NotebookText,
   Search,
+  Server,
   SquareActivity,
   Tags,
   UserRound,
   UsersRound
 } from '@lucide/vue';
-import { announcements, categories, dashboard, firstName, isAdmin, loadAll, metricCards, permissions, user } from '../stores/equinox';
+import {
+  activityDetail,
+  activityLabel,
+  announcements,
+  categories,
+  dashboard,
+  firstName,
+  householdName,
+  isAdmin,
+  isModuleEnabled,
+  loadAll,
+  metricCards,
+  permissions,
+  user
+} from '../stores/equinox';
 
 const iconMap = {
+  api: Server,
   Bookmark,
+  Bell,
   CircleHelp,
+  database: Database,
   LayoutDashboard,
   ListChecks,
+  MessageCircle,
+  media: Clapperboard,
   NotebookText,
+  photos: Images,
   Search,
   SquareActivity,
+  storage: HardDrive,
   Tags,
   UserRound,
   UsersRound
 };
 
-const visibleCategories = computed(() => categories.filter((category) => !category.adminOnly || isAdmin.value));
+const visibleCategories = computed(() => categories.filter((category) => (
+  (!category.adminOnly || isAdmin.value) && isModuleEnabled(category.moduleKey)
+)));
 const activeAnnouncements = computed(() => announcements.value.filter((announcement) => {
   if (!announcement.expiresAt) return true;
   return new Date(announcement.expiresAt) >= new Date();
 }));
+const taskSummary = computed(() => dashboard.value?.taskSummary || { overdue: 0, today: 0, recent: [] });
+const services = computed(() => dashboard.value?.services || []);
+
+function formatDue(dueAt) {
+  if (!dueAt) return 'No due date';
+  return new Intl.DateTimeFormat(undefined, { dateStyle: 'medium' }).format(new Date(dueAt));
+}
 
 onMounted(loadAll);
 </script>
@@ -81,7 +121,7 @@ onMounted(loadAll);
 
   <section class="popular-categories">
     <div class="section-heading">
-      <h2>Family Workspace</h2>
+      <h2>{{ householdName }}</h2>
       <h6>Dockerized Equinox</h6>
     </div>
 
@@ -95,7 +135,11 @@ onMounted(loadAll);
       </article>
     </div>
 
-    <section v-if="permissions.canViewAnnouncements" class="feature-panel">
+    <section
+      v-if="permissions.canViewAnnouncements && isModuleEnabled('announcements')"
+      id="announcements"
+      class="feature-panel dashboard-announcements"
+    >
       <div class="panel-copy">
         <h3>Family Announcements</h3>
         <p>Shared household notices from the family admins.</p>
@@ -114,13 +158,72 @@ onMounted(loadAll);
       </article>
     </section>
 
+    <section class="feature-grid dashboard-grid">
+      <section v-if="isModuleEnabled('tasks')" class="feature-panel">
+        <div class="panel-copy dashboard-panel-heading">
+          <div>
+            <h3>Task Summary</h3>
+            <p>What needs attention across your visible family tasks.</p>
+          </div>
+          <RouterLink class="panel-link" to="/tasks">Open tasks</RouterLink>
+        </div>
+        <div class="dashboard-task-counts">
+          <div>
+            <AlertCircle :size="22" :stroke-width="1.9" />
+            <span>Overdue</span>
+            <strong>{{ taskSummary.overdue }}</strong>
+          </div>
+          <div>
+            <Clock3 :size="22" :stroke-width="1.9" />
+            <span>Due today</span>
+            <strong>{{ taskSummary.today }}</strong>
+          </div>
+        </div>
+        <p v-if="!taskSummary.recent.length" class="empty-state">No active tasks right now.</p>
+        <article v-for="task in taskSummary.recent" :key="task.id" class="dashboard-task-row">
+          <div>
+            <strong>{{ task.title }}</strong>
+            <span>{{ task.priority }} / {{ formatDue(task.dueAt) }}</span>
+          </div>
+          <span>{{ task.owner.displayName }}</span>
+        </article>
+      </section>
+
+      <section class="feature-panel">
+        <div class="panel-copy dashboard-panel-heading">
+          <div>
+            <h3>Service Status</h3>
+            <p>Core services now and integration placeholders for later phases.</p>
+          </div>
+        </div>
+        <article v-for="service in services" :key="service.id" class="service-row">
+          <span class="service-icon" aria-hidden="true">
+            <component :is="iconMap[service.id]" :size="22" :stroke-width="1.8" />
+          </span>
+          <div>
+            <strong>{{ service.name }}</strong>
+            <span>{{ service.detail }}</span>
+          </div>
+          <span :class="['service-state', service.status]">
+            <CheckCircle2 v-if="service.status === 'online'" :size="15" :stroke-width="2.2" />
+            <Clock3 v-else :size="15" :stroke-width="2.2" />
+            {{ service.status === 'online' ? 'Online' : 'Planned' }}
+          </span>
+        </article>
+      </section>
+    </section>
+
     <section class="feature-panel">
       <div class="panel-copy">
         <h3>Recent Activity</h3>
         <p>The latest account and content events across Equinox.</p>
       </div>
+      <p v-if="!(dashboard?.activity || []).length" class="empty-state">No activity yet.</p>
       <article v-for="activity in dashboard?.activity || []" :key="activity.id" class="activity-row">
-        <strong>{{ activity.action }}</strong>
+        <div>
+          <strong>{{ activityLabel(activity.action) }}</strong>
+          <p>{{ activityDetail(activity) }}</p>
+        </div>
         <span>{{ new Date(activity.createdAt).toLocaleString() }}</span>
       </article>
     </section>

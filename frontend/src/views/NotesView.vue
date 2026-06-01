@@ -2,12 +2,14 @@
 import { computed, onMounted, ref } from 'vue';
 import AppPage from '../components/AppPage.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import TagChips from '../components/TagChips.vue';
 import {
   createNote,
   deleteNote,
   loadNotes,
   loadTags,
   newNote,
+  noteError,
   notes,
   permissions,
   tags,
@@ -70,10 +72,6 @@ function noteVisibility(note) {
   return note.isShared ? 'Shared' : 'Private';
 }
 
-function tagNames(note) {
-  return (note.tags || []).map((tag) => tag.name).join(', ');
-}
-
 onMounted(async () => {
   await Promise.all([loadNotes(), loadTags()]);
 });
@@ -81,6 +79,10 @@ onMounted(async () => {
 
 <template>
   <AppPage title="Notes" eyebrow="Quick memory">
+    <template #actions>
+      <button class="secondary-button" @click="loadNotes">Refresh</button>
+    </template>
+
     <section class="notes-workspace">
       <aside class="storage-sidebar">
         <div class="panel-copy">
@@ -117,11 +119,12 @@ onMounted(async () => {
             <div v-if="tags.length" class="tag-picker">
               <label v-for="tag in tags" :key="tag.id">
                 <input v-model="newNote.tagIds" type="checkbox" :value="tag.id" />
-                <span class="tag-chip" :style="{ borderColor: tag.color }">{{ tag.name }}</span>
+                <TagChips :tags="[tag]" />
               </label>
             </div>
             <button class="main-button" type="submit">Add note</button>
           </form>
+          <p v-if="noteError" class="storage-error">{{ noteError }}</p>
         </section>
         <section v-else class="feature-panel">
           <div class="panel-copy">
@@ -141,6 +144,7 @@ onMounted(async () => {
               v-for="tag in tags"
               :key="tag.id"
               :class="{ active: activeTagId === tag.id }"
+              :style="{ '--tag-color': tag.color }"
               @click="activeTagId = tag.id"
             >
               {{ tag.name }}
@@ -159,7 +163,7 @@ onMounted(async () => {
                   {{ noteVisibility(note) }}
                 </strong>
               </div>
-              <p v-if="note.tags?.length" class="tag-line">{{ tagNames(note) }}</p>
+              <TagChips v-if="note.tags?.length" :tags="note.tags" />
               <p class="note-body">{{ note.body || 'No details yet.' }}</p>
               <div class="item-actions">
                 <button v-if="note.canEdit" @click="beginEdit(note)">Edit</button>
@@ -180,7 +184,7 @@ onMounted(async () => {
               <div v-if="tags.length" class="tag-picker">
                 <label v-for="tag in tags" :key="tag.id">
                   <input v-model="editingNote.tagIds" type="checkbox" :value="tag.id" />
-                  <span class="tag-chip" :style="{ borderColor: tag.color }">{{ tag.name }}</span>
+                  <TagChips :tags="[tag]" />
                 </label>
               </div>
               <div class="item-actions">

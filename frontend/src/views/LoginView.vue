@@ -2,7 +2,7 @@
 import { computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import { Eclipse, LockKeyhole, UserPlus } from '@lucide/vue';
-import { authForm, authLoading, authenticate, authStatus, error, loadAuthStatus } from '../stores/equinox';
+import { authForm, authLoading, authenticate, authStatus, defaultStartPage, error, loadAuthStatus } from '../stores/equinox';
 
 const router = useRouter();
 const isSetup = computed(() => authStatus.value.setupRequired);
@@ -13,7 +13,7 @@ const actionLabel = computed(() => {
 
 async function submit() {
   if (await authenticate()) {
-    router.push('/dashboard');
+    router.push(defaultStartPage.value);
   }
 }
 

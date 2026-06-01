@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from 'vue';
 import AppPage from '../components/AppPage.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
+import TagChips from '../components/TagChips.vue';
 import {
   bookmarkError,
   bookmarks,
@@ -58,10 +59,6 @@ async function confirmDelete() {
   await deleteBookmark(bookmark);
 }
 
-function tagNames(bookmark) {
-  return (bookmark.tags || []).map((tag) => tag.name).join(', ');
-}
-
 onMounted(async () => {
   await Promise.all([loadBookmarks(), loadTags()]);
 });
@@ -110,7 +107,7 @@ onMounted(async () => {
             <div v-if="tags.length" class="tag-picker">
               <label v-for="tag in tags" :key="tag.id">
                 <input v-model="newBookmark.tagIds" type="checkbox" :value="tag.id" />
-                <span class="tag-chip" :style="{ borderColor: tag.color }">{{ tag.name }}</span>
+                <TagChips :tags="[tag]" />
               </label>
             </div>
             <button class="main-button" type="submit">Add bookmark</button>
@@ -135,6 +132,7 @@ onMounted(async () => {
               v-for="tag in tags"
               :key="tag.id"
               :class="{ active: activeTagId === tag.id }"
+              :style="{ '--tag-color': tag.color }"
               @click="activeTagId = tag.id"
             >
               {{ tag.name }}
@@ -153,7 +151,7 @@ onMounted(async () => {
                   {{ bookmark.isShared ? 'Shared' : 'Private' }}
                 </strong>
               </div>
-              <p v-if="bookmark.tags?.length" class="tag-line">{{ tagNames(bookmark) }}</p>
+              <TagChips v-if="bookmark.tags?.length" :tags="bookmark.tags" />
               <p class="note-body">{{ bookmark.notes || 'No notes yet.' }}</p>
               <div class="item-actions">
                 <a :href="bookmark.url" target="_blank" rel="noreferrer">Open</a>
@@ -176,7 +174,7 @@ onMounted(async () => {
               <div v-if="tags.length" class="tag-picker">
                 <label v-for="tag in tags" :key="tag.id">
                   <input v-model="editingBookmark.tagIds" type="checkbox" :value="tag.id" />
-                  <span class="tag-chip" :style="{ borderColor: tag.color }">{{ tag.name }}</span>
+                  <TagChips :tags="[tag]" />
                 </label>
               </div>
               <div class="item-actions">
