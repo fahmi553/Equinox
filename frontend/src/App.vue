@@ -48,9 +48,9 @@ const navGroups = computed(() => [
       { moduleKey: 'tasks', label: 'Tasks', to: '/tasks', icon: ListChecks },
       { moduleKey: 'bookmarks', label: 'Bookmarks', to: '/bookmarks', icon: Bookmark },
       { moduleKey: 'tags', label: 'Tags', to: '/tags', icon: Tags },
-      { moduleKey: 'chat', label: 'Chat', to: '/chat', icon: MessageCircle },
+      { moduleKey: 'chat', permissionKey: 'canUseChat', label: 'Chat', to: '/chat', icon: MessageCircle },
       { moduleKey: 'search', label: 'Search', to: '/search', icon: Search }
-    ].filter((item) => isModuleEnabled(item.moduleKey))
+    ].filter((item) => isModuleEnabled(item.moduleKey) && (!item.permissionKey || permissions.value[item.permissionKey]))
   },
   {
     label: 'Account',

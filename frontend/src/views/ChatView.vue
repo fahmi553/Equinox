@@ -136,7 +136,7 @@ watch(() => route.query.user, async (memberId) => {
       <div class="chat-heading">
         <div>
           <h3>{{ conversationTitle }}</h3>
-          <p>{{ conversationCopy }}</p>
+        <p>{{ conversationCopy }}</p>
         </div>
         <span>{{ chatMessages.length }} messages</span>
       </div>
@@ -160,7 +160,7 @@ watch(() => route.query.user, async (memberId) => {
       </div>
 
       <form class="chat-compose" @submit.prevent="submitMessage">
-        <textarea v-model="newChatMessage" maxlength="1200" placeholder="Write a family message"></textarea>
+        <textarea v-model="newChatMessage" maxlength="1200" :placeholder="selectedChatUser ? 'Write a personal message' : 'Write a family message'"></textarea>
         <button class="main-button" type="submit" :disabled="!canSend">
           <Send :size="18" :stroke-width="2" />
           <span>Send</span>

@@ -38,6 +38,7 @@ export const defaultPermissions = {
   canCreateTasks: true,
   canCreateTags: true,
   canCreateBookmarks: true,
+  canUseChat: true,
   canViewAnnouncements: true
 };
 export const newFamilyUser = ref({
@@ -95,7 +96,7 @@ export const categories = [
   { moduleKey: 'tasks', label: 'Tasks', value: 'To-do board', icon: 'ListChecks', to: '/tasks' },
   { moduleKey: 'bookmarks', label: 'Bookmarks', value: 'Saved links', icon: 'Bookmark', to: '/bookmarks' },
   { moduleKey: 'tags', label: 'Tags', value: 'Organize items', icon: 'Tags', to: '/tags' },
-  { moduleKey: 'chat', label: 'Chat', value: 'Family messages', icon: 'MessageCircle', to: '/chat' },
+  { moduleKey: 'chat', permissionKey: 'canUseChat', label: 'Chat', value: 'Family messages', icon: 'MessageCircle', to: '/chat' },
   { moduleKey: 'search', label: 'Search', value: 'Find anything', icon: 'Search', to: '/search' },
   { moduleKey: 'profile', label: 'Profile', value: 'Your account', icon: 'UserRound', to: '/profile' },
   { moduleKey: 'family', label: 'Family', value: 'Accounts', icon: 'UsersRound', to: '/family', adminOnly: true },

@@ -1,5 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router';
-import { isAdmin, isAuthed, isModuleEnabled, loadModules, modules, refreshSession, sessionChecked } from '../stores/equinox';
+import { isAdmin, isAuthed, isModuleEnabled, loadModules, modules, permissions, refreshSession, sessionChecked } from '../stores/equinox';
 import ActivityView from '../views/ActivityView.vue';
 import BookmarksView from '../views/BookmarksView.vue';
 import ChatView from '../views/ChatView.vue';
@@ -23,7 +23,7 @@ const routes = [
   { path: '/notes', component: NotesView, meta: { requiresAuth: true, moduleKey: 'notes' } },
   { path: '/tasks', component: TasksView, meta: { requiresAuth: true, moduleKey: 'tasks' } },
   { path: '/bookmarks', component: BookmarksView, meta: { requiresAuth: true, moduleKey: 'bookmarks' } },
-  { path: '/chat', component: ChatView, meta: { requiresAuth: true, moduleKey: 'chat' } },
+  { path: '/chat', component: ChatView, meta: { requiresAuth: true, moduleKey: 'chat', permissionKey: 'canUseChat' } },
   { path: '/tags', component: TagsView, meta: { requiresAuth: true, moduleKey: 'tags' } },
   { path: '/search', component: SearchView, meta: { requiresAuth: true, moduleKey: 'search' } },
   { path: '/profile', component: ProfileView, meta: { requiresAuth: true } },
@@ -61,6 +61,10 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.moduleKey && !isModuleEnabled(to.meta.moduleKey)) {
+    return '/dashboard';
+  }
+
+  if (to.meta.permissionKey && permissions.value[to.meta.permissionKey] === false) {
     return '/dashboard';
   }
 

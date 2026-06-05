@@ -60,6 +60,7 @@ const iconMap = {
 
 const visibleCategories = computed(() => categories.filter((category) => (
   (!category.adminOnly || isAdmin.value) && isModuleEnabled(category.moduleKey)
+  && (!category.permissionKey || permissions.value[category.permissionKey])
 )));
 const activeAnnouncements = computed(() => announcements.value.filter((announcement) => {
   if (!announcement.expiresAt) return true;

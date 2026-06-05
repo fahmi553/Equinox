@@ -277,7 +277,9 @@ No NAS required.
 - [x] Family communication
   - [x] Household chat
   - [x] Personal one-to-one chat
+  - [x] Role-based chat access
   - [x] Custom chat deletion confirmation
+  - [x] Delete chat notifications with deleted messages
   - [x] Personal notification inbox
   - [x] Unread notification badge
   - [x] Chat and announcement notifications

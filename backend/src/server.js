@@ -36,6 +36,7 @@ const permissionKeys = [
   'canCreateTasks',
   'canCreateTags',
   'canCreateBookmarks',
+  'canUseChat',
   'canViewAnnouncements'
 ];
 const defaultPermissions = Object.fromEntries(permissionKeys.map((key) => [key, false]));
@@ -47,6 +48,7 @@ const rolePermissionSeeds = {
     canCreateTasks: false,
     canCreateTags: false,
     canCreateBookmarks: false,
+    canUseChat: false,
     canViewAnnouncements: true
   },
   CHILD: {
@@ -54,6 +56,7 @@ const rolePermissionSeeds = {
     canCreateTasks: true,
     canCreateTags: false,
     canCreateBookmarks: true,
+    canUseChat: true,
     canViewAnnouncements: true
   }
 };
@@ -318,7 +321,8 @@ async function createNotifications(users, data) {
       type: data.type,
       title: data.title,
       body: data.body,
-      link: data.link || null
+      link: data.link || null,
+      sourceId: data.sourceId || null
     }))
   });
 }
@@ -1128,16 +1132,16 @@ app.patch('/notifications/:id/read', requireAuth, async (req, res) => {
   res.json(updated);
 });
 
-app.get('/chat/users', requireAuth, requireModule('chat'), async (req, res) => {
+app.get('/chat/users', requireAuth, requireModule('chat'), requireCapability('canUseChat'), async (req, res) => {
   const users = await prisma.user.findMany({
     where: { id: { not: req.user.id } },
     orderBy: { displayName: 'asc' }
   });
 
-  res.json(users.map(publicUser));
+  res.json(users.filter((user) => permissionsFor(user).canUseChat).map(publicUser));
 });
 
-app.get('/chat/messages', requireAuth, requireModule('chat'), async (req, res) => {
+app.get('/chat/messages', requireAuth, requireModule('chat'), requireCapability('canUseChat'), async (req, res) => {
   const recipientId = String(req.query.recipientId || '').trim();
   const where = recipientId
     ? {
@@ -1160,7 +1164,7 @@ app.get('/chat/messages', requireAuth, requireModule('chat'), async (req, res) =
   })));
 });
 
-app.post('/chat/messages', requireAuth, requireModule('chat'), async (req, res) => {
+app.post('/chat/messages', requireAuth, requireModule('chat'), requireCapability('canUseChat'), async (req, res) => {
   const body = String(req.body.body || '').trim();
   const recipientId = String(req.body.recipientId || '').trim() || null;
 
@@ -1176,7 +1180,7 @@ app.post('/chat/messages', requireAuth, requireModule('chat'), async (req, res) 
   const recipient = recipientId
     ? await prisma.user.findUnique({ where: { id: recipientId } })
     : null;
-  if (recipientId && !recipient) {
+  if (recipientId && (!recipient || !permissionsFor(recipient).canUseChat)) {
     return res.status(404).json({ message: 'Chat recipient not found.' });
   }
 
@@ -1184,12 +1188,13 @@ app.post('/chat/messages', requireAuth, requireModule('chat'), async (req, res) 
     data: { body, authorId: req.user.id, recipientId },
     include: { author: true }
   });
-  const recipients = recipient ? [recipient] : await householdUsers(req.user.id);
+  const recipients = recipient ? [recipient] : await householdUsers(req.user.id, (user) => permissionsFor(user).canUseChat);
   await createNotifications(recipients, {
     type: 'CHAT',
     title: `New message from ${message.author.displayName}`,
     body: message.body.slice(0, 180),
-    link: recipient ? `/chat?user=${message.authorId}` : '/chat'
+    link: recipient ? `/chat?user=${message.authorId}` : '/chat',
+    sourceId: message.id
   });
   await logActivity('chat.message_sent', req.user.id, {}, recipient ? 'PRIVATE' : 'SHARED');
 
@@ -1199,7 +1204,7 @@ app.post('/chat/messages', requireAuth, requireModule('chat'), async (req, res) 
   });
 });
 
-app.delete('/chat/messages/:id', requireAuth, requireModule('chat'), async (req, res) => {
+app.delete('/chat/messages/:id', requireAuth, requireModule('chat'), requireCapability('canUseChat'), async (req, res) => {
   const message = await prisma.chatMessage.findFirst({
     where: {
       id: req.params.id,
@@ -1212,6 +1217,9 @@ app.delete('/chat/messages/:id', requireAuth, requireModule('chat'), async (req,
   }
 
   await prisma.chatMessage.delete({ where: { id: message.id } });
+  await prisma.notification.deleteMany({
+    where: { type: 'CHAT', sourceId: message.id }
+  });
   res.status(204).end();
 });
 

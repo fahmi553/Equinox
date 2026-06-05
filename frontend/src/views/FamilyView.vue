@@ -46,6 +46,7 @@ const permissionOptions = [
   { key: 'canCreateTasks', label: 'Create tasks' },
   { key: 'canCreateTags', label: 'Create tags' },
   { key: 'canCreateBookmarks', label: 'Create bookmarks' },
+  { key: 'canUseChat', label: 'Use chat' },
   { key: 'canViewAnnouncements', label: 'View announcements' }
 ];
 
