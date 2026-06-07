@@ -53,6 +53,7 @@ const iconMap = {
   Search,
   SquareActivity,
   storage: HardDrive,
+  HardDrive,
   Tags,
   UserRound,
   UsersRound
@@ -67,6 +68,7 @@ const activeAnnouncements = computed(() => announcements.value.filter((announcem
   return new Date(announcement.expiresAt) >= new Date();
 }));
 const taskSummary = computed(() => dashboard.value?.taskSummary || { overdue: 0, today: 0, recent: [] });
+const fileSummary = computed(() => dashboard.value?.fileSummary || { important: 0, recentImportant: [] });
 const services = computed(() => dashboard.value?.services || []);
 
 function formatDue(dueAt) {
@@ -210,6 +212,24 @@ onMounted(loadAll);
             <Clock3 v-else :size="15" :stroke-width="2.2" />
             {{ service.status === 'online' ? 'Online' : 'Planned' }}
           </span>
+        </article>
+      </section>
+
+      <section v-if="isModuleEnabled('storage')" class="feature-panel">
+        <div class="panel-copy dashboard-panel-heading">
+          <div>
+            <h3>Important Files</h3>
+            <p>Files you marked for quick access in the portal.</p>
+          </div>
+          <RouterLink class="panel-link" to="/files">Open files</RouterLink>
+        </div>
+        <p v-if="!fileSummary.recentImportant.length" class="empty-state">No important files yet.</p>
+        <article v-for="file in fileSummary.recentImportant" :key="file.id" class="dashboard-task-row">
+          <div>
+            <strong>{{ file.name }}</strong>
+            <span>{{ file.path }}</span>
+          </div>
+          <span>{{ file.owner.displayName }}</span>
         </article>
       </section>
     </section>

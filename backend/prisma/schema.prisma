@@ -41,6 +41,10 @@ model User {
   sentChatMessages ChatMessage[] @relation("SentChatMessages")
   receivedChatMessages ChatMessage[] @relation("ReceivedChatMessages")
   notifications Notification[]
+  adapterFileMetadata AdapterFileMetadata[]
+  adapterFileSharesReceived AdapterFileShare[] @relation("AdapterFileShareRecipient")
+  passwordResetTokens PasswordResetToken[]
+  sessions UserSession[]
   files        FileAsset[]
   folders      Folder[]
   activityLogs ActivityLog[]
@@ -130,6 +134,7 @@ model Tag {
   notes     Note[]
   tasks     Task[]
   files     FileAsset[]
+  adapterFileMetadata AdapterFileMetadata[]
   bookmarks Bookmark[]
 
   @@unique([ownerId, name])
@@ -179,6 +184,84 @@ model FileAsset {
   folder       Folder?  @relation(fields: [folderId], references: [id], onDelete: SetNull)
   documentRecords DocumentRecord[]
   tags         Tag[]
+}
+
+model AdapterFileMetadata {
+  id          String   @id @default(cuid())
+  adapterKey  String
+  path        String
+  name        String
+  size        Int?
+  isImportant Boolean  @default(false)
+  isShared    Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  ownerId     String
+  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  tags        Tag[]
+  userShares  AdapterFileShare[]
+  publicLinks PublicFileShareLink[]
+
+  @@unique([adapterKey, path, ownerId])
+  @@index([adapterKey, path])
+  @@index([ownerId, isImportant, updatedAt])
+  @@index([isShared, updatedAt])
+}
+
+model AdapterFileShare {
+  id         String              @id @default(cuid())
+  metadataId String
+  metadata   AdapterFileMetadata @relation(fields: [metadataId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User                @relation("AdapterFileShareRecipient", fields: [userId], references: [id], onDelete: Cascade)
+  createdAt  DateTime            @default(now())
+
+  @@unique([metadataId, userId])
+  @@index([userId, createdAt])
+}
+
+model PublicFileShareLink {
+  id          String              @id @default(cuid())
+  metadataId  String
+  metadata    AdapterFileMetadata @relation(fields: [metadataId], references: [id], onDelete: Cascade)
+  tokenHash   String              @unique
+  label       String              @default("")
+  expiresAt   DateTime
+  isRevoked   Boolean             @default(false)
+  downloadCount Int               @default(0)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  @@index([metadataId, isRevoked])
+  @@index([expiresAt])
+}
+
+model PasswordResetToken {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tokenHash String    @unique
+  expiresAt DateTime
+  usedAt    DateTime?
+  createdAt DateTime  @default(now())
+
+  @@index([userId, usedAt, expiresAt])
+}
+
+model UserSession {
+  id          String    @id @default(cuid())
+  tokenId     String    @unique
+  userId      String
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  ipAddress   String    @default("unknown")
+  userAgent   String    @default("unknown")
+  rememberMe  Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  lastSeenAt  DateTime  @default(now())
+  expiresAt   DateTime
+  revokedAt   DateTime?
+
+  @@index([userId, revokedAt, expiresAt])
 }
 
 model DocumentRecord {

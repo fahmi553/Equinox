@@ -1,5 +1,7 @@
 # Equinox Roadmap
 
+Product and module progress is tracked here. Pre-NAS security, HTTPS, secrets, backups, and deployment readiness are tracked separately in [EQUINOX_PRE_NAS_ROADMAP.md](EQUINOX_PRE_NAS_ROADMAP.md).
+
 ## Equinox 2.0 Vision
 
 Equinox is not a NAS replacement.
@@ -319,17 +321,17 @@ Still no NAS required.
 
 Works on PC first and future NAS later.
 
-- [ ] Integration adapter contracts
-  - [ ] Storage adapter interface
-  - [ ] Health check interface
-  - [ ] Capability reporting
-  - [ ] Error mapping for user-friendly messages
-- [ ] Local Storage Adapter
-  - [ ] Browse files
-  - [ ] Upload files
-  - [ ] Download files
-  - [ ] Delete files
-  - [ ] Search local metadata
+- [x] Integration adapter contracts
+  - [x] Storage adapter interface
+  - [x] Health check interface
+  - [x] Capability reporting
+  - [x] Error mapping for user-friendly messages
+- [x] Local Storage Adapter
+  - [x] Browse files
+  - [x] Upload files
+  - [x] Download files
+  - [x] Delete files
+  - [x] Search local metadata
 - [ ] WebDAV Adapter
   - [ ] Connection settings
   - [ ] Browse files
@@ -337,11 +339,11 @@ Works on PC first and future NAS later.
   - [ ] Download files
   - [ ] Folder support
 - [ ] File Portal
-  - [ ] Unified file browser
-  - [ ] Adapter-backed file actions
-  - [ ] Important documents
-  - [ ] Shared file portal view
-  - [ ] File tags
+  - [x] Unified file browser
+  - [x] Adapter-backed file actions
+  - [x] Important files
+  - [x] Shared file portal view
+  - [x] File tags
 
 ### Phase 4 - NAS Integration
 

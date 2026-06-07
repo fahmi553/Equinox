@@ -3,6 +3,7 @@ import { computed, onMounted, reactive, watch } from 'vue';
 import { Cable, CheckCircle2, Clock3, RefreshCw, Settings2, UserRound } from '@lucide/vue';
 import AppPage from '../components/AppPage.vue';
 import {
+  adapterContracts,
   isAdmin,
   loadSettings,
   settings,
@@ -15,6 +16,7 @@ import {
 const systemForm = reactive({ platformName: '', householdName: '' });
 const preferenceForm = reactive({ startPage: '/dashboard', compactMode: false, dateFormat: 'locale' });
 const integrations = computed(() => settings.value?.integrations || []);
+const adapters = computed(() => adapterContracts.value?.adapters || []);
 
 watch(settings, (value) => {
   if (!value) return;
@@ -98,7 +100,7 @@ onMounted(loadSettings);
         <Cable :size="24" :stroke-width="1.8" />
         <div class="panel-copy">
           <h3>Integration settings</h3>
-          <p>Standard adapters are registered now. Connection fields arrive with each adapter implementation.</p>
+          <p>Standard adapters are registered now. Capabilities and health are defined before file browsing is built.</p>
         </div>
       </div>
       <article v-for="integration in integrations" :key="integration.key" class="integration-row">
@@ -111,7 +113,27 @@ onMounted(loadSettings);
           <CheckCircle2 v-else :size="15" :stroke-width="2.1" />
           {{ integration.healthState }}
         </span>
-        <span class="module-locked">Configuration arrives with this adapter</span>
+        <span class="module-locked">{{ integration.capabilities?.length || 0 }} capabilities</span>
+      </article>
+    </section>
+
+    <section v-if="isAdmin" class="feature-panel settings-integrations">
+      <div class="settings-heading">
+        <Cable :size="24" :stroke-width="1.8" />
+        <div class="panel-copy">
+          <h3>Adapter contract</h3>
+          <p>These descriptors are the API shape the File Portal will use for local storage, WebDAV, and later NAS services.</p>
+        </div>
+      </div>
+      <article v-for="adapter in adapters" :key="adapter.key" class="integration-row adapter-contract-row">
+        <div>
+          <strong>{{ adapter.label }}</strong>
+          <span>{{ adapter.description }}</span>
+        </div>
+        <span :class="['module-state', adapter.health.state]">
+          {{ adapter.health.state }}
+        </span>
+        <span class="module-locked">{{ adapter.capabilities.length }} capabilities</span>
       </article>
     </section>
   </AppPage>

@@ -7,6 +7,7 @@ import {
   Boxes,
   CircleHelp,
   LayoutDashboard,
+  HardDrive,
   ListChecks,
   LogOut,
   Menu,
@@ -49,6 +50,7 @@ const navGroups = computed(() => [
       { moduleKey: 'bookmarks', label: 'Bookmarks', to: '/bookmarks', icon: Bookmark },
       { moduleKey: 'tags', label: 'Tags', to: '/tags', icon: Tags },
       { moduleKey: 'chat', permissionKey: 'canUseChat', label: 'Chat', to: '/chat', icon: MessageCircle },
+      { moduleKey: 'storage', label: 'Files', to: '/files', icon: HardDrive },
       { moduleKey: 'search', label: 'Search', to: '/search', icon: Search }
     ].filter((item) => isModuleEnabled(item.moduleKey) && (!item.permissionKey || permissions.value[item.permissionKey]))
   },
@@ -68,9 +70,9 @@ const navGroups = computed(() => [
   }
 ]);
 
-function handleLogout() {
+async function handleLogout() {
   mobileNavOpen.value = false;
-  logout();
+  await logout();
   router.push('/login');
 }
 

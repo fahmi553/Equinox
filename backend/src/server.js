@@ -4,17 +4,88 @@ import cors from 'cors';
 import express from 'express';
 import jwt from 'jsonwebtoken';
 import multer from 'multer';
+import { createHash, randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { mkdir, stat, unlink } from 'node:fs/promises';
 import { PrismaClient } from '@prisma/client';
+import {
+  adapterDescriptor,
+  adapterErrorCodes,
+  adapterErrorResponse,
+  AdapterError,
+  integrationAdapterDefinitions
+} from './integrations/adapter-contracts.js';
+import { LocalStorageAdapter } from './integrations/local-storage-adapter.js';
 
 const app = express();
 const prisma = new PrismaClient();
 const port = process.env.PORT || 3000;
-const jwtSecret = process.env.JWT_SECRET || 'dev-only-secret';
+const configuredJwtSecret = process.env.JWT_SECRET;
+const jwtSecret = configuredJwtSecret || 'dev-only-secret';
 const uploadDir = path.resolve(process.env.UPLOAD_DIR || 'storage/uploads');
+const localStorageRoot = path.resolve(process.env.LOCAL_STORAGE_ROOT || 'storage/local');
+const resetTokenTtlMinutes = Number(process.env.PASSWORD_RESET_TOKEN_TTL_MINUTES || 30);
+const publicShareTtlDays = Number(process.env.PUBLIC_SHARE_TTL_DAYS || 7);
+const exposeLocalResetCodes = process.env.EXPOSE_LOCAL_RESET_CODES !== 'false';
+const sessionTtlHours = Number(process.env.SESSION_TTL_HOURS || 12);
+const rememberSessionTtlDays = Number(process.env.REMEMBER_SESSION_TTL_DAYS || 30);
+const enforceHttps = process.env.ENFORCE_HTTPS === 'true';
+const trustProxy = process.env.TRUST_PROXY === 'true';
+const localStorageMaxUploadMb = Number(process.env.LOCAL_STORAGE_MAX_UPLOAD_MB || 50);
+const rateLimitWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000);
+const apiRateLimitMax = Number(process.env.API_RATE_LIMIT_MAX || 300);
+const authRateLimitMax = Number(process.env.AUTH_RATE_LIMIT_MAX || 5);
+const passwordResetRateLimitMax = Number(process.env.PASSWORD_RESET_RATE_LIMIT_MAX || 5);
+const uploadRateLimitMax = Number(process.env.UPLOAD_RATE_LIMIT_MAX || 30);
+const blockedUploadExtensions = csvSetting(process.env.BLOCKED_UPLOAD_EXTENSIONS, [
+  'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'ps1', 'psm1', 'vbs', 'vbe', 'js', 'jse', 'mjs',
+  'cjs', 'jar', 'php', 'sh', 'bash', 'zsh', 'fish', 'py', 'pl', 'rb', 'reg', 'hta', 'html',
+  'htm', 'svg'
+]);
+const allowedUploadExtensions = csvSetting(process.env.ALLOWED_UPLOAD_EXTENSIONS, [
+  'txt', 'md', 'csv', 'json', 'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
+  'jpg', 'jpeg', 'png', 'gif', 'webp', 'mp4', 'mov', 'mp3', 'wav', 'm4a', 'zip', '7z', 'rar'
+]);
+const allowedUploadMimeTypes = csvSetting(process.env.ALLOWED_UPLOAD_MIME_TYPES, [
+  'text/plain',
+  'text/markdown',
+  'text/csv',
+  'application/csv',
+  'application/json',
+  'application/pdf',
+  'application/msword',
+  'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+  'application/vnd.ms-excel',
+  'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  'application/vnd.ms-powerpoint',
+  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'image/jpeg',
+  'image/png',
+  'image/gif',
+  'image/webp',
+  'video/mp4',
+  'video/quicktime',
+  'audio/mpeg',
+  'audio/mp4',
+  'audio/wav',
+  'audio/x-wav',
+  'application/zip',
+  'application/x-zip-compressed',
+  'application/x-7z-compressed',
+  'application/vnd.rar',
+  'application/x-rar-compressed'
+]);
+
+if (!configuredJwtSecret || configuredJwtSecret === 'dev-only-secret') {
+  console.warn('JWT_SECRET is not configured. Set a strong JWT_SECRET in .env before real use.');
+} else if (configuredJwtSecret.length < 32) {
+  console.warn('JWT_SECRET is set but short. Use at least 32 random characters before real use.');
+}
+
+app.set('trust proxy', trustProxy ? 1 : false);
 
 await mkdir(uploadDir, { recursive: true });
+await mkdir(localStorageRoot, { recursive: true });
 
 const storage = multer.diskStorage({
   destination: (req, _file, cb) => {
@@ -30,7 +101,12 @@ const storage = multer.diskStorage({
   }
 });
 
-const upload = multer({ storage });
+const upload = multer({ storage, limits: { fileSize: localStorageMaxUploadMb * 1024 * 1024 } });
+const portalUpload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: localStorageMaxUploadMb * 1024 * 1024 }
+});
+const localStorageAdapter = new LocalStorageAdapter(localStorageRoot);
 const permissionKeys = [
   'canCreateNotes',
   'canCreateTasks',
@@ -76,7 +152,7 @@ const moduleRegistry = [
   { key: 'notifications', label: 'Notifications', description: 'Personal unread updates from Equinox.', path: '/notifications', group: 'Account', icon: 'Bell', isCore: true, isToggleable: false, defaultEnabled: true, healthState: 'available' },
   { key: 'guide', label: 'Guide', description: 'Help for people using Equinox.', path: '/guide', group: 'Account', icon: 'CircleHelp', isCore: true, isToggleable: false, defaultEnabled: true, healthState: 'available' },
   { key: 'announcements', label: 'Announcements', description: 'Household messages shown on the dashboard.', path: null, group: 'Family', icon: 'Megaphone', isCore: false, isToggleable: true, defaultEnabled: true, healthState: 'available' },
-  { key: 'storage', label: 'File Portal', description: 'Adapter-backed access to NAS files.', path: null, group: 'Portals', icon: 'HardDrive', isCore: false, isToggleable: false, defaultEnabled: false, healthState: 'planned' },
+  { key: 'storage', label: 'Files', description: 'Adapter-backed access to local and NAS files.', path: '/files', group: 'Workspace', icon: 'HardDrive', isCore: false, isToggleable: true, defaultEnabled: true, healthState: 'available' },
   { key: 'photos', label: 'Photo Portal', description: 'Future photo service integration.', path: null, group: 'Portals', icon: 'Images', isCore: false, isToggleable: false, defaultEnabled: false, healthState: 'planned' },
   { key: 'media', label: 'Media Portal', description: 'Future media service integration.', path: null, group: 'Portals', icon: 'Clapperboard', isCore: false, isToggleable: false, defaultEnabled: false, healthState: 'planned' }
 ];
@@ -85,22 +161,207 @@ const systemSettingSeeds = {
   platformName: 'Equinox',
   householdName: 'Family Workspace'
 };
-const integrationSettingSeeds = [
-  { key: 'local-storage', label: 'Local Storage', adapterType: 'storage', healthState: 'planned' },
-  { key: 'webdav', label: 'WebDAV', adapterType: 'storage', healthState: 'planned' },
-  { key: 'smb', label: 'SMB', adapterType: 'storage', healthState: 'planned' },
-  { key: 'docker', label: 'Docker', adapterType: 'service', healthState: 'planned' },
-  { key: 'ssh', label: 'SSH', adapterType: 'server', healthState: 'planned' },
-  { key: 'api', label: 'Generic API', adapterType: 'service', healthState: 'planned' }
-];
+const integrationSettingSeeds = integrationAdapterDefinitions.map((definition) => ({
+  key: definition.key,
+  label: definition.label,
+  adapterType: definition.adapterType,
+  healthState: definition.healthState,
+  isEnabled: definition.key === 'local-storage'
+}));
 const startPages = ['/dashboard', '/search', '/profile'];
 const dateFormats = ['locale', 'day-first', 'month-first'];
 
+function csvSetting(value, fallback) {
+  const source = value ? String(value).split(',') : fallback;
+  return source
+    .map((item) => String(item).trim().toLowerCase().replace(/^\./, ''))
+    .filter(Boolean);
+}
+
+function isSecureRequest(req) {
+  return req.secure || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
+}
+
+function applySecurityHeaders(req, res, next) {
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('Permissions-Policy', 'camera=(), microphone=(), geolocation=()');
+
+  if (enforceHttps || isSecureRequest(req)) {
+    res.setHeader('Strict-Transport-Security', 'max-age=15552000; includeSubDomains');
+  }
+
+  next();
+}
+
+function requireHttps(req, res, next) {
+  if (!enforceHttps || req.path === '/health' || isSecureRequest(req)) {
+    return next();
+  }
+
+  return res.redirect(308, `https://${req.headers.host}${req.originalUrl}`);
+}
+
+function rateLimitNumber(value, fallback) {
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+const rateLimitBuckets = new Map();
+
+function requestRateLimitKey(req) {
+  const forwardedFor = String(req.headers['x-forwarded-for'] || '').split(',')[0].trim();
+  return forwardedFor || req.ip || req.socket.remoteAddress || 'unknown';
+}
+
+function createRateLimiter({ keyPrefix, max, windowMs = rateLimitWindowMs, message, key = requestRateLimitKey }) {
+  const limit = rateLimitNumber(max, 100);
+  const duration = rateLimitNumber(windowMs, 60_000);
+
+  return (req, res, next) => {
+    const now = Date.now();
+    const bucketKey = `${keyPrefix}:${key(req)}`;
+    let bucket = rateLimitBuckets.get(bucketKey);
+
+    if (!bucket || bucket.resetAt <= now) {
+      bucket = { count: 0, resetAt: now + duration };
+      rateLimitBuckets.set(bucketKey, bucket);
+    }
+
+    bucket.count += 1;
+    const remaining = Math.max(limit - bucket.count, 0);
+    res.setHeader('RateLimit-Limit', String(limit));
+    res.setHeader('RateLimit-Remaining', String(remaining));
+    res.setHeader('RateLimit-Reset', String(Math.ceil((bucket.resetAt - now) / 1000)));
+
+    if (bucket.count > limit) {
+      return res.status(429).json({ message });
+    }
+
+    if (rateLimitBuckets.size > 5000) {
+      for (const [currentKey, currentBucket] of rateLimitBuckets.entries()) {
+        if (currentBucket.resetAt <= now) {
+          rateLimitBuckets.delete(currentKey);
+        }
+      }
+    }
+
+    next();
+  };
+}
+
+const apiRateLimiter = createRateLimiter({
+  keyPrefix: 'api',
+  max: apiRateLimitMax,
+  message: 'Too many requests. Please wait a moment and try again.'
+});
+const authRateLimiter = createRateLimiter({
+  keyPrefix: 'auth',
+  max: authRateLimitMax,
+  message: 'Too many sign-in attempts. Please wait a minute and try again.',
+  key: (req) => `${requestRateLimitKey(req)}:${String(req.body?.username || '').trim().toLowerCase()}`
+});
+const passwordResetRateLimiter = createRateLimiter({
+  keyPrefix: 'password-reset',
+  max: passwordResetRateLimitMax,
+  message: 'Too many password reset attempts. Please wait a minute and try again.',
+  key: (req) => `${requestRateLimitKey(req)}:${String(req.body?.username || '').trim().toLowerCase()}`
+});
+const uploadRateLimiter = createRateLimiter({
+  keyPrefix: 'upload',
+  max: uploadRateLimitMax,
+  message: 'Too many uploads. Please wait a moment and try again.'
+});
+
+function uploadMiddleware(singleUpload) {
+  return (req, res, next) => {
+    singleUpload(req, res, (err) => {
+      if (!err) return next();
+
+      if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+        return res.status(413).json({
+          message: `That file is too large. The current upload limit is ${localStorageMaxUploadMb} MB.`
+        });
+      }
+
+      console.error(err);
+      return res.status(400).json({ message: 'The file could not be uploaded. Please try a different file.' });
+    });
+  };
+}
+
+const handleLegacyFileUpload = uploadMiddleware(upload.single('file'));
+const handlePortalFileUpload = uploadMiddleware(portalUpload.single('file'));
+
+function validateUploadedFile(file) {
+  if (!file) {
+    throw new AdapterError(adapterErrorCodes.NOT_FOUND, 'A file upload is required.');
+  }
+
+  const extension = path.extname(file.originalname || '').slice(1).toLowerCase();
+  const mimeType = String(file.mimetype || '').toLowerCase();
+
+  if (!extension) {
+    throw new AdapterError(adapterErrorCodes.INVALID_PATH, 'Files need a visible file extension before upload.');
+  }
+
+  if (blockedUploadExtensions.includes(extension)) {
+    throw new AdapterError(adapterErrorCodes.INVALID_PATH, `.${extension} files are blocked for safety.`);
+  }
+
+  if (!allowedUploadExtensions.includes(extension)) {
+    throw new AdapterError(adapterErrorCodes.INVALID_PATH, `.${extension} files are not allowed in Equinox uploads yet.`);
+  }
+
+  if (!mimeType || !allowedUploadMimeTypes.includes(mimeType)) {
+    throw new AdapterError(adapterErrorCodes.INVALID_PATH, `The file type "${mimeType || 'unknown'}" is not allowed for upload.`);
+  }
+}
+
+app.use(applySecurityHeaders);
+app.use(requireHttps);
 app.use(cors({ origin: process.env.FRONTEND_URL || true }));
 app.use(express.json());
+app.use(apiRateLimiter);
 
-function signToken(user) {
-  return jwt.sign({ id: user.id, role: user.role }, jwtSecret, { expiresIn: '7d' });
+async function createSession(user, req, rememberMe = false) {
+  const tokenId = randomToken(16);
+  const expiresAt = rememberMe ? daysFromNow(rememberSessionTtlDays) : new Date(Date.now() + sessionTtlHours * 60 * 60 * 1000);
+  const session = await prisma.userSession.create({
+    data: {
+      tokenId,
+      userId: user.id,
+      rememberMe,
+      expiresAt,
+      ipAddress: req.ip || req.headers['x-forwarded-for'] || 'unknown',
+      userAgent: req.headers['user-agent'] || 'unknown'
+    }
+  });
+
+  return {
+    session,
+    token: jwt.sign({ id: user.id, role: user.role, sid: session.id, jti: tokenId }, jwtSecret, { expiresIn: rememberMe ? `${rememberSessionTtlDays}d` : `${sessionTtlHours}h` })
+  };
+}
+
+function randomToken(bytes = 32) {
+  return randomBytes(bytes).toString('base64url');
+}
+
+function tokenHash(token) {
+  return createHash('sha256').update(String(token || '')).digest('hex');
+}
+
+function minutesFromNow(minutes) {
+  const expiresAt = new Date();
+  expiresAt.setMinutes(expiresAt.getMinutes() + minutes);
+  return expiresAt;
+}
+
+function daysFromNow(days) {
+  const expiresAt = new Date();
+  expiresAt.setDate(expiresAt.getDate() + days);
+  return expiresAt;
 }
 
 function permissionsFor(user) {
@@ -210,12 +471,17 @@ async function systemSettings() {
 }
 
 function serializeIntegration(integration, includeConfig = false) {
+  const definition = integrationAdapterDefinitions.find((item) => item.key === integration.key);
+
   return {
     key: integration.key,
     label: integration.label,
     adapterType: integration.adapterType,
     isEnabled: integration.isEnabled,
     healthState: integration.healthState,
+    description: definition?.description || '',
+    capabilities: definition?.capabilities || [],
+    configSchema: definition?.configSchema || {},
     updatedAt: integration.updatedAt,
     ...(includeConfig ? { config: integration.config || {} } : {})
   };
@@ -332,7 +598,7 @@ async function householdUsers(excludeUserId, predicate = () => true) {
   return users.filter((user) => user.id !== excludeUserId && predicate(user));
 }
 
-function requireAuth(req, res, next) {
+async function requireAuth(req, res, next) {
   const header = req.headers.authorization || '';
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
 
@@ -341,7 +607,28 @@ function requireAuth(req, res, next) {
   }
 
   try {
-    req.user = jwt.verify(token, jwtSecret);
+    const payload = jwt.verify(token, jwtSecret);
+    const session = payload.sid ? await prisma.userSession.findFirst({
+      where: {
+        id: payload.sid,
+        tokenId: payload.jti || '',
+        userId: payload.id,
+        revokedAt: null,
+        expiresAt: { gt: new Date() }
+      },
+      include: { user: true }
+    }) : null;
+
+    if (!session || !session.user) {
+      return res.status(401).json({ message: 'Session expired. Please sign in again.' });
+    }
+
+    req.user = { id: session.user.id, role: session.user.role };
+    req.session = session;
+    await prisma.userSession.update({
+      where: { id: session.id },
+      data: { lastSeenAt: new Date() }
+    });
     return next();
   } catch {
     return res.status(401).json({ message: 'Invalid or expired token.' });
@@ -641,6 +928,227 @@ function serializeTag(tag, user) {
   };
 }
 
+function adapterMetadataWhere(user) {
+  if (user.role === 'ADMIN') {
+    return {};
+  }
+
+  return { ownerId: user.id };
+}
+
+function serializeAdapterMetadata(metadata, user) {
+  if (!metadata) {
+    return {
+      id: null,
+      isImportant: false,
+    isShared: false,
+    sharedWith: [],
+    publicLinks: [],
+    tags: [],
+    canEdit: true
+  };
+  }
+
+  return {
+    id: metadata.id,
+    isImportant: metadata.isImportant,
+    isShared: metadata.isShared,
+    sharedWith: (metadata.userShares || []).map((share) => publicUser(share.user)),
+    publicLinks: (metadata.publicLinks || []).map((link) => ({
+      id: link.id,
+      label: link.label,
+      expiresAt: link.expiresAt,
+      isRevoked: link.isRevoked,
+      downloadCount: link.downloadCount,
+      createdAt: link.createdAt
+    })),
+    tags: (metadata.tags || []).map((tag) => serializeTag(tag, user)),
+    canEdit: canEditContent(metadata, user),
+    owner: metadata.owner ? publicUser(metadata.owner) : null
+  };
+}
+
+function formatBytes(bytes = 0) {
+  if (!bytes) return '0 B';
+  const units = ['B', 'KB', 'MB', 'GB', 'TB'];
+  let size = bytes;
+  let index = 0;
+  while (size >= 1024 && index < units.length - 1) {
+    size /= 1024;
+    index += 1;
+  }
+  return `${size.toFixed(size >= 10 || index === 0 ? 0 : 1)} ${units[index]}`;
+}
+
+async function enrichAdapterItems(items, user, adapterKey = 'local-storage') {
+  const fileItems = items.filter((item) => item.type === 'file');
+  if (!fileItems.length) return items;
+
+  const metadataRows = await prisma.adapterFileMetadata.findMany({
+    where: {
+      adapterKey,
+      path: { in: fileItems.map((item) => item.path) },
+      ...adapterMetadataWhere(user)
+    },
+    include: { owner: true, tags: true, userShares: { include: { user: true } }, publicLinks: { where: { isRevoked: false }, orderBy: { createdAt: 'desc' } } }
+  });
+  const ownRows = metadataRows.filter((item) => item.ownerId === user.id);
+  const metadataMap = new Map([
+    ...metadataRows.map((item) => [item.path, item]),
+    ...ownRows.map((item) => [item.path, item])
+  ]);
+
+  return items.map((item) => {
+    if (item.type !== 'file') return item;
+    const metadata = metadataMap.get(item.path);
+    return {
+      ...item,
+      metadata: {
+        ...item.metadata,
+        app: serializeAdapterMetadata(metadata, user)
+      }
+    };
+  });
+}
+
+async function upsertAdapterFileMetadata({ adapterKey = 'local-storage', item, user, data = {} }) {
+  const tagConnections = await editableTagConnections(data.tagIds, user);
+  const createTagConnections = tagConnections
+    ? { connect: tagConnections.set || [] }
+    : undefined;
+
+  const updateData = {
+    name: item.name,
+    size: item.size,
+    ...(typeof data.isImportant === 'boolean' ? { isImportant: data.isImportant } : {}),
+    ...(typeof data.isShared === 'boolean' ? { isShared: data.isShared } : {}),
+    ...(tagConnections ? { tags: tagConnections } : {})
+  };
+
+  return prisma.adapterFileMetadata.upsert({
+    where: {
+      adapterKey_path_ownerId: {
+        adapterKey,
+        path: item.path,
+        ownerId: user.id
+      }
+    },
+    create: {
+      adapterKey,
+      path: item.path,
+      name: item.name,
+      size: item.size,
+      ownerId: user.id,
+      isImportant: typeof data.isImportant === 'boolean' ? data.isImportant : false,
+      isShared: typeof data.isShared === 'boolean' ? data.isShared : false,
+      ...(createTagConnections ? { tags: createTagConnections } : {})
+    },
+    update: updateData,
+    include: { owner: true, tags: true, userShares: { include: { user: true } }, publicLinks: { where: { isRevoked: false }, orderBy: { createdAt: 'desc' } } }
+  });
+}
+
+async function ensureOwnedAdapterMetadata(pathValue, user) {
+  const target = localStorageAdapter.resolvePath(pathValue);
+  const item = await localStorageAdapter.itemFromPath(target);
+
+  if (item.type !== 'file') {
+    throw new AdapterError(adapterErrorCodes.INVALID_PATH, 'Only files can be shared.');
+  }
+
+  const metadata = await upsertAdapterFileMetadata({
+    adapterKey: localStorageAdapter.key,
+    item,
+    user,
+    data: {}
+  });
+
+  if (!canEditContent(metadata, user)) {
+    throw new AdapterError(adapterErrorCodes.PERMISSION_DENIED, 'Only the owner can change sharing for this file.');
+  }
+
+  return { item, metadata };
+}
+
+async function localAdapterMetadataForPath(pathValue) {
+  const target = localStorageAdapter.resolvePath(pathValue);
+  const item = await localStorageAdapter.itemFromPath(target);
+
+  if (item.type !== 'file') {
+    throw new AdapterError(adapterErrorCodes.INVALID_PATH, 'Only files are supported for this action.');
+  }
+
+  const metadata = await prisma.adapterFileMetadata.findFirst({
+    where: {
+      adapterKey: localStorageAdapter.key,
+      path: item.path
+    },
+    include: { owner: true, tags: true, userShares: { include: { user: true } }, publicLinks: { where: { isRevoked: false }, orderBy: { createdAt: 'desc' } } }
+  });
+
+  return { item, metadata };
+}
+
+async function requireLocalFileOwner(pathValue, user) {
+  const { item, metadata } = await localAdapterMetadataForPath(pathValue);
+
+  if (!metadata) {
+    if (user.role === 'ADMIN') return { item, metadata };
+    throw new AdapterError(adapterErrorCodes.PERMISSION_DENIED, 'Only an admin can manage unclaimed adapter files.');
+  }
+
+  if (user.role !== 'ADMIN' && metadata.ownerId !== user.id) {
+    throw new AdapterError(adapterErrorCodes.PERMISSION_DENIED, 'Only the owner can manage this file.');
+  }
+
+  return { item, metadata };
+}
+
+async function requireLocalFileRead(pathValue, user) {
+  const { item, metadata } = await localAdapterMetadataForPath(pathValue);
+
+  if (!metadata) {
+    if (user.role === 'ADMIN') return { item, metadata };
+    throw new AdapterError(adapterErrorCodes.PERMISSION_DENIED, 'This file has not been shared with this account.');
+  }
+
+  const canRead = user.role === 'ADMIN'
+    || metadata.ownerId === user.id
+    || metadata.isShared
+    || metadata.userShares.some((share) => share.userId === user.id);
+
+  if (!canRead) {
+    throw new AdapterError(adapterErrorCodes.PERMISSION_DENIED, 'This file has not been shared with this account.');
+  }
+
+  return { item, metadata };
+}
+
+async function canAccessSharedMetadata(metadataId, user) {
+  if (user.role === 'ADMIN') {
+    return prisma.adapterFileMetadata.findFirst({
+      where: {
+        id: metadataId,
+        adapterKey: localStorageAdapter.key
+      },
+      include: { owner: true, tags: true, userShares: { include: { user: true } }, publicLinks: { where: { isRevoked: false }, orderBy: { createdAt: 'desc' } } }
+    });
+  }
+
+  return prisma.adapterFileMetadata.findFirst({
+    where: {
+      id: metadataId,
+      adapterKey: localStorageAdapter.key,
+      OR: [
+        { isShared: true },
+        { ownerId: user.id },
+        { userShares: { some: { userId: user.id } } }
+      ]
+    },
+    include: { owner: true, tags: true, userShares: { include: { user: true } }, publicLinks: { where: { isRevoked: false }, orderBy: { createdAt: 'desc' } } }
+  });
+}
+
 function cleanUrl(value) {
   const url = String(value || '').trim();
   if (!url) return '';
@@ -771,7 +1279,7 @@ app.get('/auth/me', requireAuth, async (req, res) => {
   res.json({ user: publicUser(currentUser) });
 });
 
-app.post('/auth/setup', async (req, res) => {
+app.post('/auth/setup', authRateLimiter, async (req, res) => {
   const { username, password, displayName } = req.body;
   const cleanUsername = String(username || '').trim();
   const cleanDisplayName = String(displayName || '').trim();
@@ -801,8 +1309,9 @@ app.post('/auth/setup', async (req, res) => {
       }
     });
 
+    const session = await createSession(user, req, Boolean(req.body.rememberMe));
     await logActivity('auth.owner_setup', user.id, { username: user.username });
-    res.status(201).json({ token: signToken(user), user: publicUser(user) });
+    res.status(201).json({ token: session.token, user: publicUser(user), session: serializeSession(session.session) });
   } catch (err) {
     if (err.code === 'P2002') {
       return res.status(409).json({ message: 'Username is already taken.' });
@@ -822,8 +1331,8 @@ app.post('/auth/register', async (_req, res) => {
   return res.status(403).json({ message: 'Public registration is disabled. Ask an admin to create your account.' });
 });
 
-app.post('/auth/login', async (req, res) => {
-  const { username, password } = req.body;
+app.post('/auth/login', authRateLimiter, async (req, res) => {
+  const { username, password, rememberMe = false } = req.body;
   const user = await prisma.user.findUnique({ where: { username: String(username || '').trim() } });
 
   if (!user || !(await bcrypt.compare(password || '', user.passwordHash))) {
@@ -834,7 +1343,140 @@ app.post('/auth/login', async (req, res) => {
     username: user.username,
     ...requestAuditMetadata(req)
   });
-  res.json({ token: signToken(user), user: publicUser(user) });
+  const session = await createSession(user, req, Boolean(rememberMe));
+  res.json({ token: session.token, user: publicUser(user), session: serializeSession(session.session) });
+});
+
+function serializeSession(session) {
+  return {
+    id: session.id,
+    ipAddress: session.ipAddress,
+    userAgent: session.userAgent,
+    rememberMe: session.rememberMe,
+    createdAt: session.createdAt,
+    lastSeenAt: session.lastSeenAt,
+    expiresAt: session.expiresAt,
+    isCurrent: false
+  };
+}
+
+app.post('/auth/logout', requireAuth, async (req, res) => {
+  await prisma.userSession.update({
+    where: { id: req.session.id },
+    data: { revokedAt: new Date() }
+  });
+  await logActivity('user.logout', req.user.id, { sessionId: req.session.id }, 'PRIVATE');
+  res.status(204).end();
+});
+
+app.post('/auth/logout-all', requireAuth, async (req, res) => {
+  await prisma.userSession.updateMany({
+    where: { userId: req.user.id, revokedAt: null },
+    data: { revokedAt: new Date() }
+  });
+  await logActivity('user.logout_all', req.user.id, {}, 'PRIVATE');
+  res.status(204).end();
+});
+
+app.get('/auth/sessions', requireAuth, async (req, res) => {
+  const sessions = await prisma.userSession.findMany({
+    where: {
+      userId: req.user.id,
+      revokedAt: null,
+      expiresAt: { gt: new Date() }
+    },
+    orderBy: { lastSeenAt: 'desc' }
+  });
+
+  res.json(sessions.map((session) => ({
+    ...serializeSession(session),
+    isCurrent: session.id === req.session.id
+  })));
+});
+
+app.delete('/auth/sessions/:id', requireAuth, async (req, res) => {
+  const session = await prisma.userSession.findFirst({
+    where: { id: req.params.id, userId: req.user.id, revokedAt: null }
+  });
+
+  if (!session) {
+    return res.status(404).json({ message: 'Session not found.' });
+  }
+
+  await prisma.userSession.update({
+    where: { id: session.id },
+    data: { revokedAt: new Date() }
+  });
+  await logActivity('user.session_revoked', req.user.id, { sessionId: session.id }, 'PRIVATE');
+  res.status(204).end();
+});
+
+app.post('/auth/password-reset/request', passwordResetRateLimiter, async (req, res) => {
+  const username = String(req.body.username || '').trim();
+  const user = username ? await prisma.user.findUnique({ where: { username } }) : null;
+  let resetCode = null;
+
+  if (user) {
+    const rawToken = randomToken(24);
+    resetCode = rawToken;
+
+    await prisma.passwordResetToken.create({
+      data: {
+        userId: user.id,
+        tokenHash: tokenHash(rawToken),
+        expiresAt: minutesFromNow(resetTokenTtlMinutes)
+      }
+    });
+
+    await logActivity('auth.password_reset_requested', user.id, { username: user.username }, 'PRIVATE');
+  }
+
+  res.json({
+    message: 'If that account exists, a password reset code has been created.',
+    resetCode: exposeLocalResetCodes ? resetCode : null,
+    expiresInMinutes: resetTokenTtlMinutes
+  });
+});
+
+app.post('/auth/password-reset/confirm', passwordResetRateLimiter, async (req, res) => {
+  const username = String(req.body.username || '').trim();
+  const code = String(req.body.code || '').trim();
+  const password = String(req.body.password || '');
+
+  if (!username || !code || password.length < 8) {
+    return res.status(400).json({ message: 'Username, reset code, and a new password of at least 8 characters are required.' });
+  }
+
+  const user = await prisma.user.findUnique({ where: { username } });
+  if (!user) {
+    return res.status(400).json({ message: 'Reset code is invalid or expired.' });
+  }
+
+  const reset = await prisma.passwordResetToken.findFirst({
+    where: {
+      userId: user.id,
+      tokenHash: tokenHash(code),
+      usedAt: null,
+      expiresAt: { gt: new Date() }
+    }
+  });
+
+  if (!reset) {
+    return res.status(400).json({ message: 'Reset code is invalid or expired.' });
+  }
+
+  const passwordHash = await bcrypt.hash(password, 12);
+  await prisma.$transaction([
+    prisma.user.update({ where: { id: user.id }, data: { passwordHash } }),
+    prisma.passwordResetToken.update({ where: { id: reset.id }, data: { usedAt: new Date() } }),
+    prisma.passwordResetToken.updateMany({
+      where: { userId: user.id, usedAt: null, id: { not: reset.id } },
+      data: { usedAt: new Date() }
+    })
+  ]);
+
+  await logActivity('auth.password_reset_completed', user.id, { username: user.username }, 'PRIVATE');
+  res.status(204).end();
 });
 
 app.post('/auth/change-password', requireAuth, async (req, res) => {
@@ -863,11 +1505,20 @@ app.get('/dashboard', requireAuth, async (req, res) => {
   const tomorrowStart = new Date(todayStart);
   tomorrowStart.setDate(tomorrowStart.getDate() + 1);
   const visibleActiveTasks = { ...accessibleTaskWhere(req.user), status: { not: 'DONE' } };
-  const [profileUser, notes, tasks, bookmarks, users, overdueTasks, todayTasks, recentTasks, activity] = await Promise.all([
+  const [profileUser, notes, tasks, bookmarks, importantFiles, recentImportantFiles, users, overdueTasks, todayTasks, recentTasks, activity] = await Promise.all([
     prisma.user.findUnique({ where: { id: req.user.id } }),
     prisma.note.count({ where: accessibleNoteWhere(req.user) }),
     prisma.task.count({ where: visibleActiveTasks }),
     prisma.bookmark.count({ where: accessibleBookmarkWhere(req.user) }),
+    isModuleEnabled('storage') ? prisma.adapterFileMetadata.count({
+      where: { isImportant: true, ...adapterMetadataWhere(req.user) }
+    }) : 0,
+    isModuleEnabled('storage') ? prisma.adapterFileMetadata.findMany({
+      where: { isImportant: true, ...adapterMetadataWhere(req.user) },
+      orderBy: { updatedAt: 'desc' },
+      take: 5,
+      include: { owner: true, tags: true }
+    }) : [],
     prisma.user.count(),
     prisma.task.count({ where: { ...visibleActiveTasks, dueAt: { lt: todayStart } } }),
     prisma.task.count({ where: { ...visibleActiveTasks, dueAt: { gte: todayStart, lt: tomorrowStart } } }),
@@ -881,7 +1532,20 @@ app.get('/dashboard', requireAuth, async (req, res) => {
 
   res.json({
     user: profileUser ? publicUser(profileUser) : null,
-    totals: { notes, tasks, bookmarks, users },
+    totals: { notes, tasks, bookmarks, files: importantFiles, users },
+    fileSummary: {
+      important: importantFiles,
+      recentImportant: recentImportantFiles.map((item) => ({
+        id: item.id,
+        adapterKey: item.adapterKey,
+        name: item.name,
+        path: item.path,
+        size: item.size,
+        isImportant: item.isImportant,
+        tags: item.tags.map((tag) => serializeTag(tag, req.user)),
+        owner: publicUser(item.owner)
+      }))
+    },
     taskSummary: {
       overdue: overdueTasks,
       today: todayTasks,
@@ -898,7 +1562,7 @@ app.get('/dashboard', requireAuth, async (req, res) => {
     services: [
       { id: 'api', name: 'Equinox API', detail: 'Application services', status: 'online' },
       { id: 'database', name: 'PostgreSQL', detail: 'Application data', status: 'online' },
-      { id: 'storage', name: 'NAS Storage', detail: 'Storage adapter', status: 'planned' },
+      { id: 'storage', name: 'File Portal', detail: 'Local Storage adapter', status: isModuleEnabled('storage') ? 'online' : 'planned' },
       { id: 'photos', name: 'Photos', detail: 'Photo adapter', status: 'planned' },
       { id: 'media', name: 'Media', detail: 'Media adapter', status: 'planned' }
     ],
@@ -947,6 +1611,19 @@ app.get('/settings', requireAuth, async (req, res) => {
     system,
     preferences,
     integrations: integrations.map((integration) => serializeIntegration(integration, req.user.role === 'ADMIN'))
+  });
+});
+
+app.get('/integrations/adapters', requireAuth, requireAdmin, async (_req, res) => {
+  const settings = await prisma.integrationSetting.findMany();
+  const settingMap = Object.fromEntries(settings.map((setting) => [setting.key, setting]));
+
+  res.json({
+    adapters: integrationAdapterDefinitions.map((definition) => adapterDescriptor(settingMap[definition.key], definition)),
+    errorContract: Object.fromEntries(Object.values(adapterErrorCodes).map((code) => [
+      code,
+      adapterErrorResponse(new AdapterError(code))
+    ]))
   });
 });
 
@@ -1706,7 +2383,7 @@ app.get('/search', requireAuth, requireModule('search'), async (req, res) => {
     select: Object.fromEntries(['id', 'role', ...permissionKeys].map((key) => [key, true]))
   });
   const adapterSources = moduleRegistry
-    .filter((module) => module.group === 'Portals')
+    .filter((module) => ['storage', 'photos', 'media'].includes(module.key))
     .map((module) => {
       const serialized = serializeModule(module);
       return {
@@ -1769,7 +2446,7 @@ app.get('/search', requireAuth, requireModule('search'), async (req, res) => {
     && isModuleEnabled('announcements')
   );
 
-  const [notes, tasks, bookmarks, announcements, tags] = await Promise.all([
+  const [notes, tasks, bookmarks, announcements, tags, adapterResults] = await Promise.all([
     isModuleEnabled('notes') ? prisma.note.findMany({
       where: { AND: [accessibleNoteWhere(req.user), noteMatch] },
       orderBy: { updatedAt: 'desc' },
@@ -1799,7 +2476,8 @@ app.get('/search', requireAuth, requireModule('search'), async (req, res) => {
       orderBy: { name: 'asc' },
       take: 12,
       include: { owner: true }
-    }) : []
+    }) : [],
+    isModuleEnabled('storage') ? localAdapterSearchResults(query, req.user) : []
   ]);
 
   res.json({
@@ -1824,9 +2502,413 @@ app.get('/search', requireAuth, requireModule('search'), async (req, res) => {
       ...serializeTag(item, req.user),
       owner: publicUser(item.owner)
     })),
-    adapterResults: [],
+    adapterResults,
     adapterSources
   });
+});
+
+async function localAdapterSearchResults(query, user) {
+  const metadataRows = await prisma.adapterFileMetadata.findMany({
+    where: {
+      adapterKey: 'local-storage',
+      AND: [
+        user.role === 'ADMIN' ? {} : { OR: [{ ownerId: user.id }, { isShared: true }] },
+        {
+          OR: [
+            { name: { contains: query, mode: 'insensitive' } },
+            { path: { contains: query, mode: 'insensitive' } },
+            { tags: { some: { name: { contains: query, mode: 'insensitive' } } } }
+          ]
+        }
+      ]
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: 12,
+    include: { owner: true, tags: true }
+  });
+
+  const liveItems = await localStorageAdapter.search(query);
+  const byPath = new Map();
+
+  for (const item of liveItems.filter((entry) => entry.type === 'file')) {
+    byPath.set(item.path, item);
+  }
+
+  for (const row of metadataRows) {
+    if (!byPath.has(row.path)) {
+      try {
+        byPath.set(row.path, await localStorageAdapter.itemFromPath(localStorageAdapter.resolvePath(row.path)));
+      } catch {
+        // Skip metadata rows for files that no longer exist in the adapter.
+      }
+    }
+  }
+
+  const metadataByPath = new Map(metadataRows.map((item) => [item.path, item]));
+  const enriched = await enrichAdapterItems([...byPath.values()].slice(0, 12), user, 'local-storage');
+  return enriched.map((item) => ({
+    id: item.id,
+    sourceKey: 'storage',
+    name: item.name,
+    title: item.name,
+    path: item.path,
+    tags: (metadataByPath.get(item.path) ? serializeAdapterMetadata(metadataByPath.get(item.path), user) : item.metadata.app).tags,
+    meta: `${formatBytes(item.size)} / ${item.metadata.displayPath}`,
+    summary: (metadataByPath.get(item.path) || item.metadata.app).isShared
+      ? 'Shared file in Local Storage.'
+      : item.metadata.app.isImportant ? 'Important file in Local Storage.' : 'File in Local Storage.',
+    href: '/files'
+  }));
+}
+
+async function sharedLocalAdapterFiles(user) {
+  const rows = await prisma.adapterFileMetadata.findMany({
+    where: {
+      adapterKey: localStorageAdapter.key,
+      ...(user.role === 'ADMIN'
+        ? { OR: [{ isShared: true }, { userShares: { some: {} } }] }
+        : {
+            ownerId: { not: user.id },
+            OR: [
+              { isShared: true },
+              { userShares: { some: { userId: user.id } } }
+            ]
+          })
+    },
+    orderBy: { updatedAt: 'desc' },
+    take: 80,
+    include: { owner: true, tags: true, userShares: { include: { user: true } }, publicLinks: { where: { isRevoked: false }, orderBy: { createdAt: 'desc' } } }
+  });
+
+  const files = [];
+  for (const row of rows) {
+    try {
+      const item = await localStorageAdapter.itemFromPath(localStorageAdapter.resolvePath(row.path));
+      if (item.type === 'file') {
+        files.push({
+          ...item,
+          metadata: {
+            ...item.metadata,
+            app: serializeAdapterMetadata(row, user)
+          }
+        });
+      }
+    } catch {
+      // Hide shared metadata for files no longer present in the adapter.
+    }
+  }
+
+  return files;
+}
+
+function sendAdapterError(res, error) {
+  const response = adapterErrorResponse(error);
+  const status = response.code === adapterErrorCodes.NOT_FOUND ? 404
+    : response.code === adapterErrorCodes.CONFLICT ? 409
+      : response.code === adapterErrorCodes.PERMISSION_DENIED ? 403
+        : response.code === adapterErrorCodes.INVALID_PATH ? 400
+          : 500;
+
+  return res.status(status).json(response);
+}
+
+app.get('/file-portal/local', requireAuth, requireModule('storage'), async (req, res) => {
+  try {
+    const [listing, health] = await Promise.all([
+      localStorageAdapter.list(req.query.path, req.query.q),
+      localStorageAdapter.health()
+    ]);
+    const [folders, files] = await Promise.all([
+      enrichAdapterItems(listing.folders, req.user, localStorageAdapter.key),
+      enrichAdapterItems(listing.files, req.user, localStorageAdapter.key)
+    ]);
+
+    res.json({
+      adapter: {
+        key: localStorageAdapter.key,
+        label: 'Local Storage',
+        health,
+        capabilities: localStorageAdapter.capabilities()
+      },
+      ...listing,
+      folders,
+      files
+    });
+  } catch (err) {
+    return sendAdapterError(res, err);
+  }
+});
+
+app.post('/file-portal/local/folders', requireAuth, requireModule('storage'), async (req, res) => {
+  try {
+    const folder = await localStorageAdapter.createFolder(req.body.path, req.body.name);
+    await logActivity('file_portal.folder_created', req.user.id, { name: folder.name }, 'PRIVATE');
+    res.status(201).json(folder);
+  } catch (err) {
+    return sendAdapterError(res, err);
+  }
+});
+
+app.post('/file-portal/local/files', requireAuth, requireModule('storage'), uploadRateLimiter, handlePortalFileUpload, async (req, res) => {
+  try {
+    validateUploadedFile(req.file);
+    const file = await localStorageAdapter.upload(req.body.path, req.file);
+    await upsertAdapterFileMetadata({
+      adapterKey: localStorageAdapter.key,
+      item: file,
+      user: req.user,
+      data: {}
+    });
+    await logActivity('file_portal.file_uploaded', req.user.id, { name: file.name }, 'PRIVATE');
+    const [enrichedFile] = await enrichAdapterItems([file], req.user, localStorageAdapter.key);
+    res.status(201).json(enrichedFile);
+  } catch (err) {
+    return sendAdapterError(res, err);
+  }
+});
+
+app.patch('/file-portal/local/metadata', requireAuth, requireModule('storage'), async (req, res) => {
+  try {
+    const { item } = await requireLocalFileOwner(req.body.path, req.user);
+
+    const metadata = await upsertAdapterFileMetadata({
+      adapterKey: localStorageAdapter.key,
+      item,
+      user: req.user,
+      data: req.body
+    });
+
+    await logActivity('file_portal.metadata_updated', req.user.id, {
+      name: item.name,
+      path: item.path,
+      isShared: metadata.isShared
+    }, metadata.isShared ? 'SHARED' : 'PRIVATE');
+    res.json(serializeAdapterMetadata(metadata, req.user));
+  } catch (err) {
+    return sendAdapterError(res, err);
+  }
+});
+
+app.patch('/file-portal/local/share-users', requireAuth, requireModule('storage'), async (req, res) => {
+  try {
+    const { item, metadata } = await ensureOwnedAdapterMetadata(req.body.path, req.user);
+    const userIds = Array.isArray(req.body.userIds) ? [...new Set(req.body.userIds.map(String))] : [];
+    const recipients = await prisma.user.findMany({
+      where: {
+        AND: [
+          { id: { in: userIds } },
+          { id: { not: req.user.id } }
+        ]
+      }
+    });
+
+    const updated = await prisma.adapterFileMetadata.update({
+      where: { id: metadata.id },
+      data: {
+        name: item.name,
+        size: item.size,
+        userShares: {
+          deleteMany: {},
+          createMany: {
+            data: recipients.map((user) => ({ userId: user.id }))
+          }
+        }
+      },
+      include: { owner: true, tags: true, userShares: { include: { user: true } }, publicLinks: { where: { isRevoked: false }, orderBy: { createdAt: 'desc' } } }
+    });
+
+    await createNotifications(recipients, {
+      type: 'FILE_SHARE',
+      title: `${req.user.displayName || 'Family'} shared a file`,
+      body: item.name,
+      link: '/files',
+      sourceId: metadata.id
+    });
+    await logActivity('file_portal.user_share_updated', req.user.id, {
+      name: item.name,
+      path: item.path,
+      users: recipients.map((user) => user.displayName)
+    }, recipients.length ? 'SHARED' : 'PRIVATE');
+
+    res.json(serializeAdapterMetadata(updated, req.user));
+  } catch (err) {
+    return sendAdapterError(res, err);
+  }
+});
+
+app.post('/file-portal/local/public-links', requireAuth, requireModule('storage'), async (req, res) => {
+  try {
+    const { item, metadata } = await ensureOwnedAdapterMetadata(req.body.path, req.user);
+    const rawToken = randomToken(32);
+    const days = Number(req.body.expiresInDays || publicShareTtlDays);
+    const expiresAt = daysFromNow(Number.isFinite(days) && days > 0 ? Math.min(days, 30) : publicShareTtlDays);
+    const link = await prisma.publicFileShareLink.create({
+      data: {
+        metadataId: metadata.id,
+        tokenHash: tokenHash(rawToken),
+        label: String(req.body.label || '').trim().slice(0, 80),
+        expiresAt
+      }
+    });
+
+    await logActivity('file_portal.public_link_created', req.user.id, {
+      name: item.name,
+      path: item.path,
+      expiresAt
+    }, 'PRIVATE');
+
+    res.status(201).json({
+      id: link.id,
+      token: rawToken,
+      url: `/api/public/file/${rawToken}`,
+      label: link.label,
+      expiresAt: link.expiresAt,
+      isRevoked: link.isRevoked,
+      downloadCount: link.downloadCount
+    });
+  } catch (err) {
+    return sendAdapterError(res, err);
+  }
+});
+
+app.delete('/file-portal/local/public-links/:id', requireAuth, requireModule('storage'), async (req, res) => {
+  try {
+    const link = await prisma.publicFileShareLink.findFirst({
+      where: {
+        id: req.params.id,
+        metadata: {
+          ownerId: req.user.id,
+          adapterKey: localStorageAdapter.key
+        }
+      }
+    });
+
+    if (!link && req.user.role !== 'ADMIN') {
+      return res.status(404).json({ message: 'Public link not found.' });
+    }
+
+    const target = link || await prisma.publicFileShareLink.findUnique({ where: { id: req.params.id } });
+    if (!target) {
+      return res.status(404).json({ message: 'Public link not found.' });
+    }
+
+    await prisma.publicFileShareLink.update({
+      where: { id: target.id },
+      data: { isRevoked: true }
+    });
+    await logActivity('file_portal.public_link_revoked', req.user.id, { linkId: target.id }, 'PRIVATE');
+    res.status(204).end();
+  } catch (err) {
+    return sendAdapterError(res, err);
+  }
+});
+
+app.get('/public/file/:token', async (req, res) => {
+  try {
+    const link = await prisma.publicFileShareLink.findFirst({
+      where: {
+        tokenHash: tokenHash(req.params.token),
+        isRevoked: false,
+        expiresAt: { gt: new Date() }
+      },
+      include: { metadata: true }
+    });
+
+    if (!link || link.metadata.adapterKey !== localStorageAdapter.key) {
+      return res.status(404).json({ message: 'Public link not found or expired.' });
+    }
+
+    const file = await localStorageAdapter.download(link.metadata.path);
+    await prisma.publicFileShareLink.update({
+      where: { id: link.id },
+      data: { downloadCount: { increment: 1 } }
+    });
+    res.setHeader('Content-Length', file.size);
+    res.download(localStorageAdapter.resolvePath(link.metadata.path), file.name);
+  } catch (err) {
+    return sendAdapterError(res, err);
+  }
+});
+
+app.get('/file-portal/shared', requireAuth, requireModule('storage'), async (req, res) => {
+  try {
+    const files = await sharedLocalAdapterFiles(req.user);
+    res.json({
+      adapter: {
+        key: localStorageAdapter.key,
+        label: 'Local Storage'
+      },
+      files,
+      summary: {
+        files: files.length,
+        visibleSize: files.reduce((total, item) => total + (item.size || 0), 0)
+      }
+    });
+  } catch (err) {
+    return sendAdapterError(res, err);
+  }
+});
+
+app.get('/file-portal/share-users', requireAuth, requireModule('storage'), async (req, res) => {
+  const users = await householdUsers(req.user.id);
+  res.json(users.map(publicUser));
+});
+
+app.get('/file-portal/shared/download', requireAuth, requireModule('storage'), async (req, res) => {
+  try {
+    const metadata = await canAccessSharedMetadata(String(req.query.id || ''), req.user);
+
+    if (!metadata) {
+      throw new AdapterError(adapterErrorCodes.NOT_FOUND, 'Shared file not found.');
+    }
+
+    const file = await localStorageAdapter.download(metadata.path);
+    res.setHeader('Content-Length', file.size);
+    res.download(localStorageAdapter.resolvePath(metadata.path), file.name);
+  } catch (err) {
+    return sendAdapterError(res, err);
+  }
+});
+
+app.get('/file-portal/local/download', requireAuth, requireModule('storage'), async (req, res) => {
+  try {
+    await requireLocalFileRead(req.query.path, req.user);
+    const file = await localStorageAdapter.download(req.query.path);
+    res.setHeader('Content-Length', file.size);
+    res.download(localStorageAdapter.resolvePath(req.query.path), file.name);
+  } catch (err) {
+    return sendAdapterError(res, err);
+  }
+});
+
+app.delete('/file-portal/local/items', requireAuth, requireModule('storage'), async (req, res) => {
+  try {
+    const itemPath = req.query.path || req.body.path;
+    const target = localStorageAdapter.resolvePath(itemPath);
+    const item = await localStorageAdapter.itemFromPath(target);
+    if (item.type === 'file') {
+      await requireLocalFileOwner(itemPath, req.user);
+    } else if (req.user.role !== 'ADMIN') {
+      throw new AdapterError(adapterErrorCodes.PERMISSION_DENIED, 'Only admins can delete folders in the local adapter.');
+    }
+    await localStorageAdapter.delete(itemPath);
+    await prisma.adapterFileMetadata.deleteMany({
+      where: {
+        adapterKey: localStorageAdapter.key,
+        OR: [
+          { path: String(itemPath || '') },
+          { path: { startsWith: `${String(itemPath || '').replace(/\/+$/, '')}/` } }
+        ]
+      }
+    });
+    await prisma.notification.deleteMany({
+      where: { type: 'FILE_PORTAL', sourceId: String(itemPath || '') }
+    });
+    await logActivity('file_portal.item_deleted', req.user.id, { path: itemPath }, 'PRIVATE');
+    res.status(204).end();
+  } catch (err) {
+    return sendAdapterError(res, err);
+  }
 });
 
 app.use(['/reminders', '/files', '/storage', '/folders', '/documents', '/document-records'], requireAuth, (_req, res) => {
@@ -2400,9 +3482,14 @@ app.delete('/folders/:id', requireAuth, async (req, res) => {
   res.status(204).end();
 });
 
-app.post('/files', requireAuth, requireCapability('canUploadFiles'), upload.single('file'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ message: 'A file upload is required.' });
+app.post('/files', requireAuth, requireCapability('canUploadFiles'), uploadRateLimiter, handleLegacyFileUpload, async (req, res) => {
+  try {
+    validateUploadedFile(req.file);
+  } catch (err) {
+    if (req.file?.path) {
+      await unlink(req.file.path).catch(() => undefined);
+    }
+    return sendAdapterError(res, err);
   }
 
   const folderId = req.body.folderId || null;

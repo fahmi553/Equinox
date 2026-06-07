@@ -5,6 +5,7 @@ import AppPage from '../components/AppPage.vue';
 import {
   changePassword,
   loadProfile,
+  logoutAllDevices,
   passwordError,
   passwordForm,
   passwordMessage,
@@ -12,6 +13,8 @@ import {
   profileError,
   profileForm,
   profileMessage,
+  revokeSession,
+  sessions,
   updateProfile
 } from '../stores/equinox';
 
@@ -103,6 +106,28 @@ onMounted(loadProfile);
             <p v-if="passwordError" class="storage-error">{{ passwordError }}</p>
             <p v-if="passwordMessage" class="success-note">{{ passwordMessage }}</p>
           </form>
+        </section>
+
+        <section class="feature-panel">
+          <div class="panel-copy dashboard-panel-heading">
+            <div>
+              <h3>Active sessions</h3>
+              <p>Review signed-in devices and remove sessions you do not recognize.</p>
+            </div>
+            <button class="secondary-button" @click="logoutAllDevices">Logout all</button>
+          </div>
+          <p v-if="!sessions.length" class="empty-state">No active sessions.</p>
+          <article v-for="session in sessions" :key="session.id" class="session-row">
+            <div>
+              <strong>{{ session.isCurrent ? 'This device' : 'Signed-in device' }}</strong>
+              <span>{{ session.ipAddress }} / {{ session.rememberMe ? 'Remembered' : 'Standard' }}</span>
+              <small>{{ session.userAgent }}</small>
+            </div>
+            <div>
+              <span>Expires {{ new Date(session.expiresAt).toLocaleString() }}</span>
+              <button class="secondary-button" :disabled="session.isCurrent" @click="revokeSession(session)">Remove</button>
+            </div>
+          </article>
         </section>
 
         <section class="profile-metrics">

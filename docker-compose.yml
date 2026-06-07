@@ -28,10 +28,12 @@ services:
     environment:
       DATABASE_URL: postgresql://${POSTGRES_USER:-equinox}:${POSTGRES_PASSWORD:-equinox}@database:5432/${POSTGRES_DB:-equinox}?schema=public
       UPLOAD_DIR: /app/storage/uploads
+      LOCAL_STORAGE_ROOT: /app/storage/local
     ports:
       - "3000:3000"
     volumes:
       - uploads_data:/app/storage/uploads
+      - local_storage_data:/app/storage/local
     depends_on:
       database:
         condition: service_healthy
@@ -50,3 +52,4 @@ services:
 volumes:
   postgres_data:
   uploads_data:
+  local_storage_data:

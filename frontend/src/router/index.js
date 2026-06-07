@@ -5,6 +5,7 @@ import BookmarksView from '../views/BookmarksView.vue';
 import ChatView from '../views/ChatView.vue';
 import DashboardView from '../views/DashboardView.vue';
 import FamilyView from '../views/FamilyView.vue';
+import FilesView from '../views/FilesView.vue';
 import GuideView from '../views/GuideView.vue';
 import LoginView from '../views/LoginView.vue';
 import NotesView from '../views/NotesView.vue';
@@ -24,6 +25,7 @@ const routes = [
   { path: '/tasks', component: TasksView, meta: { requiresAuth: true, moduleKey: 'tasks' } },
   { path: '/bookmarks', component: BookmarksView, meta: { requiresAuth: true, moduleKey: 'bookmarks' } },
   { path: '/chat', component: ChatView, meta: { requiresAuth: true, moduleKey: 'chat', permissionKey: 'canUseChat' } },
+  { path: '/files', component: FilesView, meta: { requiresAuth: true, moduleKey: 'storage' } },
   { path: '/tags', component: TagsView, meta: { requiresAuth: true, moduleKey: 'tags' } },
   { path: '/search', component: SearchView, meta: { requiresAuth: true, moduleKey: 'search' } },
   { path: '/profile', component: ProfileView, meta: { requiresAuth: true } },

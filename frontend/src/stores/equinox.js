@@ -4,7 +4,10 @@ export const apiBase = import.meta.env.VITE_API_BASE_URL || '/api';
 export const token = ref(localStorage.getItem('equinox.token') || '');
 export const user = ref(JSON.parse(localStorage.getItem('equinox.user') || 'null'));
 export const authMode = ref('login');
-export const authForm = ref({ username: '', password: '', displayName: '' });
+export const authForm = ref({ username: '', password: '', displayName: '', rememberMe: false });
+export const resetForm = ref({ username: '', code: '', password: '' });
+export const resetMessage = ref('');
+export const resetCode = ref('');
 export const authStatus = ref({ hasOwner: true, setupRequired: false, roles: [] });
 export const authLoading = ref(false);
 export const sessionChecked = ref(false);
@@ -12,6 +15,13 @@ export const dashboard = ref(null);
 export const activity = ref([]);
 export const modules = ref([]);
 export const settings = ref(null);
+export const adapterContracts = ref(null);
+export const localFiles = ref(null);
+export const localFilesLoading = ref(false);
+export const sharedFiles = ref(null);
+export const sharedFilesLoading = ref(false);
+export const fileShareUsers = ref([]);
+export const latestPublicFileLink = ref(null);
 export const familyUsers = ref([]);
 export const rolePermissions = ref([]);
 export const announcements = ref([]);
@@ -21,6 +31,7 @@ export const selectedChatUserId = ref('');
 export const notifications = ref([]);
 export const unreadNotificationCount = ref(0);
 export const profile = ref(null);
+export const sessions = ref([]);
 export const notes = ref([]);
 export const tasks = ref([]);
 export const tags = ref([]);
@@ -61,6 +72,7 @@ export const taskError = ref('');
 export const tagError = ref('');
 export const bookmarkError = ref('');
 export const globalSearchError = ref('');
+export const filePortalError = ref('');
 export const announcementError = ref('');
 export const chatError = ref('');
 export const moduleError = ref('');
@@ -95,6 +107,7 @@ export const categories = [
   { moduleKey: 'notes', label: 'Notes', value: 'Quick memory', icon: 'NotebookText', to: '/notes' },
   { moduleKey: 'tasks', label: 'Tasks', value: 'To-do board', icon: 'ListChecks', to: '/tasks' },
   { moduleKey: 'bookmarks', label: 'Bookmarks', value: 'Saved links', icon: 'Bookmark', to: '/bookmarks' },
+  { moduleKey: 'storage', label: 'Files', value: 'Local storage', icon: 'HardDrive', to: '/files' },
   { moduleKey: 'tags', label: 'Tags', value: 'Organize items', icon: 'Tags', to: '/tags' },
   { moduleKey: 'chat', permissionKey: 'canUseChat', label: 'Chat', value: 'Family messages', icon: 'MessageCircle', to: '/chat' },
   { moduleKey: 'search', label: 'Search', value: 'Find anything', icon: 'Search', to: '/search' },
@@ -108,13 +121,19 @@ export const metricCards = computed(() => [
   { moduleKey: 'notes', label: 'Notes', value: dashboard.value?.totals.notes ?? notes.value.length, icon: 'NotebookText' },
   { moduleKey: 'tasks', label: 'Tasks', value: dashboard.value?.totals.tasks ?? tasks.value.length, icon: 'ListChecks' },
   { moduleKey: 'bookmarks', label: 'Bookmarks', value: dashboard.value?.totals.bookmarks ?? bookmarks.value.length, icon: 'Bookmark' },
+  { moduleKey: 'storage', label: 'Important Files', value: dashboard.value?.totals.files ?? 0, icon: 'HardDrive' },
   { label: 'Family', value: dashboard.value?.totals.users ?? familyUsers.value.length, icon: 'UsersRound' }
 ].filter((metric) => !metric.moduleKey || isModuleEnabled(metric.moduleKey)));
 
 const activityLabels = {
   'auth.owner_setup': 'Owner account created',
   'auth.password_changed': 'Password changed',
+  'auth.password_reset_requested': 'Password reset requested',
+  'auth.password_reset_completed': 'Password reset completed',
   'user.login': 'Signed in',
+  'user.logout': 'Signed out',
+  'user.logout_all': 'Signed out all devices',
+  'user.session_revoked': 'Session revoked',
   'user.created': 'Account created',
   'user.updated': 'Account updated',
   'user.profile_updated': 'Profile updated',
@@ -140,7 +159,14 @@ const activityLabels = {
   'bookmark.created': 'Bookmark created',
   'bookmark.updated': 'Bookmark updated',
   'bookmark.deleted': 'Bookmark deleted',
-  'chat.message_sent': 'Chat message sent'
+  'chat.message_sent': 'Chat message sent',
+  'file_portal.folder_created': 'Folder created',
+  'file_portal.file_uploaded': 'File uploaded',
+  'file_portal.item_deleted': 'File deleted',
+  'file_portal.metadata_updated': 'File metadata updated',
+  'file_portal.user_share_updated': 'File share updated',
+  'file_portal.public_link_created': 'Public file link created',
+  'file_portal.public_link_revoked': 'Public file link revoked'
 };
 
 export function activityLabel(action) {
@@ -265,18 +291,19 @@ export async function authenticate() {
 
   try {
     const body = authMode.value === 'login'
-      ? { username: authForm.value.username, password: authForm.value.password }
+      ? { username: authForm.value.username, password: authForm.value.password, rememberMe: authForm.value.rememberMe }
       : {
           username: authForm.value.username,
           password: authForm.value.password,
-          displayName: authForm.value.displayName
+          displayName: authForm.value.displayName,
+          rememberMe: authForm.value.rememberMe
         };
     const result = await api(path, { method: 'POST', body: JSON.stringify(body) });
     token.value = result.token;
     user.value = result.user;
     localStorage.setItem('equinox.token', result.token);
     localStorage.setItem('equinox.user', JSON.stringify(result.user));
-    authForm.value = { username: '', password: '', displayName: '' };
+    authForm.value = { username: '', password: '', displayName: '', rememberMe: false };
     await loadAuthStatus();
     await loadAll();
     return true;
@@ -288,14 +315,74 @@ export async function authenticate() {
   }
 }
 
-export function logout() {
+export async function requestPasswordReset() {
+  error.value = '';
+  resetMessage.value = '';
+  resetCode.value = '';
+  authLoading.value = true;
+
+  try {
+    const result = await api('/auth/password-reset/request', {
+      method: 'POST',
+      body: JSON.stringify({ username: resetForm.value.username })
+    });
+    resetMessage.value = result.message;
+    resetCode.value = result.resetCode || '';
+    authMode.value = 'reset-confirm';
+    return true;
+  } catch (err) {
+    error.value = err.message;
+    return false;
+  } finally {
+    authLoading.value = false;
+  }
+}
+
+export async function confirmPasswordReset() {
+  error.value = '';
+  resetMessage.value = '';
+  authLoading.value = true;
+
+  try {
+    await api('/auth/password-reset/confirm', {
+      method: 'POST',
+      body: JSON.stringify(resetForm.value)
+    });
+    resetMessage.value = 'Password reset. You can sign in now.';
+    resetForm.value = { username: '', code: '', password: '' };
+    resetCode.value = '';
+    authMode.value = 'login';
+    return true;
+  } catch (err) {
+    error.value = err.message;
+    return false;
+  } finally {
+    authLoading.value = false;
+  }
+}
+
+export async function logout({ remote = true } = {}) {
+  if (remote && token.value) {
+    try {
+      await api('/auth/logout', { method: 'POST' });
+    } catch {
+      // Local cleanup still matters if the server already expired the session.
+    }
+  }
+
   token.value = '';
   user.value = null;
   dashboard.value = null;
   activity.value = [];
   modules.value = [];
   settings.value = null;
+  adapterContracts.value = null;
+  localFiles.value = null;
+  sharedFiles.value = null;
+  fileShareUsers.value = [];
+  latestPublicFileLink.value = null;
   profile.value = null;
+  sessions.value = [];
   familyUsers.value = [];
   rolePermissions.value = [];
   announcements.value = [];
@@ -383,6 +470,171 @@ export async function updateModuleSetting(module, isEnabled) {
 
 export async function loadSettings() {
   settings.value = await api('/settings');
+  if (isAdmin.value) {
+    adapterContracts.value = await api('/integrations/adapters');
+  } else {
+    adapterContracts.value = null;
+  }
+}
+
+export async function loadLocalFiles(path = '', query = '') {
+  filePortalError.value = '';
+  localFilesLoading.value = true;
+  const params = new URLSearchParams();
+  if (path) params.set('path', path);
+  if (query) params.set('q', query);
+
+  try {
+    localFiles.value = await api(`/file-portal/local${params.toString() ? `?${params}` : ''}`);
+    return true;
+  } catch (err) {
+    filePortalError.value = err.message;
+    return false;
+  } finally {
+    localFilesLoading.value = false;
+  }
+}
+
+export async function loadSharedFiles() {
+  filePortalError.value = '';
+  sharedFilesLoading.value = true;
+
+  try {
+    sharedFiles.value = await api('/file-portal/shared');
+    return true;
+  } catch (err) {
+    filePortalError.value = err.message;
+    return false;
+  } finally {
+    sharedFilesLoading.value = false;
+  }
+}
+
+export async function loadFileShareUsers() {
+  filePortalError.value = '';
+
+  try {
+    fileShareUsers.value = await api('/file-portal/share-users');
+    return true;
+  } catch (err) {
+    filePortalError.value = err.message;
+    return false;
+  }
+}
+
+export async function createLocalFolder(path, name) {
+  filePortalError.value = '';
+  try {
+    await api('/file-portal/local/folders', {
+      method: 'POST',
+      body: JSON.stringify({ path, name })
+    });
+    await loadLocalFiles(path);
+    return true;
+  } catch (err) {
+    filePortalError.value = err.message;
+    return false;
+  }
+}
+
+export async function uploadLocalFile(path, file) {
+  filePortalError.value = '';
+  if (!file) {
+    filePortalError.value = 'Choose a file first.';
+    return false;
+  }
+
+  const formData = new FormData();
+  formData.append('path', path || '');
+  formData.append('file', file);
+
+  try {
+    await api('/file-portal/local/files', { method: 'POST', body: formData });
+    await loadLocalFiles(path);
+    return true;
+  } catch (err) {
+    filePortalError.value = err.message;
+    return false;
+  }
+}
+
+export async function deleteLocalItem(path, currentPath) {
+  filePortalError.value = '';
+  const params = new URLSearchParams({ path });
+
+  try {
+    await api(`/file-portal/local/items?${params}`, { method: 'DELETE' });
+    await loadLocalFiles(currentPath);
+    return true;
+  } catch (err) {
+    filePortalError.value = err.message;
+    return false;
+  }
+}
+
+export async function updateLocalFileMetadata(path, data = {}, currentPath = '') {
+  filePortalError.value = '';
+
+  try {
+    await api('/file-portal/local/metadata', {
+      method: 'PATCH',
+      body: JSON.stringify({ path, ...data })
+    });
+    await loadLocalFiles(currentPath);
+    await loadSharedFiles();
+    return true;
+  } catch (err) {
+    filePortalError.value = err.message;
+    return false;
+  }
+}
+
+export async function updateLocalFileUserShares(path, userIds = [], currentPath = '') {
+  filePortalError.value = '';
+
+  try {
+    await api('/file-portal/local/share-users', {
+      method: 'PATCH',
+      body: JSON.stringify({ path, userIds })
+    });
+    await loadLocalFiles(currentPath);
+    await loadSharedFiles();
+    return true;
+  } catch (err) {
+    filePortalError.value = err.message;
+    return false;
+  }
+}
+
+export async function createLocalFilePublicLink(path, currentPath = '') {
+  filePortalError.value = '';
+  latestPublicFileLink.value = null;
+
+  try {
+    latestPublicFileLink.value = await api('/file-portal/local/public-links', {
+      method: 'POST',
+      body: JSON.stringify({ path })
+    });
+    await loadLocalFiles(currentPath);
+    return true;
+  } catch (err) {
+    filePortalError.value = err.message;
+    return false;
+  }
+}
+
+export async function revokeLocalFilePublicLink(id, currentPath = '') {
+  filePortalError.value = '';
+
+  try {
+    await api(`/file-portal/local/public-links/${id}`, { method: 'DELETE' });
+    latestPublicFileLink.value = null;
+    await loadLocalFiles(currentPath);
+    return true;
+  } catch (err) {
+    filePortalError.value = err.message;
+    return false;
+  }
 }
 
 export async function updateSystemSettings(data) {
@@ -582,6 +834,7 @@ export async function loadAnnouncements(includeExpired = false) {
 
 export async function loadProfile() {
   profile.value = await api('/profile');
+  sessions.value = await api('/auth/sessions');
   if (profile.value?.user) {
     user.value = profile.value.user;
     profileForm.value = {
@@ -590,6 +843,20 @@ export async function loadProfile() {
     };
     localStorage.setItem('equinox.user', JSON.stringify(profile.value.user));
   }
+}
+
+export async function loadSessions() {
+  sessions.value = await api('/auth/sessions');
+}
+
+export async function revokeSession(session) {
+  await api(`/auth/sessions/${session.id}`, { method: 'DELETE' });
+  await loadSessions();
+}
+
+export async function logoutAllDevices() {
+  await api('/auth/logout-all', { method: 'POST' });
+  await logout({ remote: false });
 }
 
 export async function updateProfile() {
