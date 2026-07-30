@@ -13,16 +13,18 @@ import {
   Menu,
   Megaphone,
   MessageCircle,
+  Moon,
   NotebookText,
   Search,
   Settings,
   SquareActivity,
+  Sun,
   Tags,
   UserRound,
   UsersRound,
   X
 } from '@lucide/vue';
-import { announcements, householdName, isAdmin, isAuthed, isModuleEnabled, loadNotifications, logout, permissions, platformName, preferences, unreadNotificationCount, user } from './stores/equinox';
+import { announcements, householdName, isAdmin, isAuthed, isLightTheme, isModuleEnabled, loadNotifications, logout, permissions, platformName, preferences, themeMode, toggleThemeMode, unreadNotificationCount, user } from './stores/equinox';
 
 const route = useRoute();
 const router = useRouter();
@@ -90,7 +92,7 @@ onUnmounted(() => window.clearInterval(notificationTimer));
 </script>
 
 <template>
-  <main :class="{ 'compact-mode': preferences.compactMode }">
+  <main :class="{ 'compact-mode': preferences.compactMode, 'light-theme': isLightTheme }">
     <header class="site-header">
       <RouterLink class="brand" to="/dashboard">
         <img class="brand-logo" src="/template-assets/images/equinox-logo.png" alt="Equinox logo" />
@@ -106,6 +108,18 @@ onUnmounted(() => window.clearInterval(notificationTimer));
           <Bell :size="20" :stroke-width="2" />
           <span v-if="unreadNotificationCount">{{ unreadNotificationCount > 99 ? '99+' : unreadNotificationCount }}</span>
         </RouterLink>
+        <button
+          class="theme-button"
+          type="button"
+          :title="isLightTheme ? 'Switch to dark theme' : 'Switch to light theme'"
+          :aria-label="isLightTheme ? 'Switch to dark theme' : 'Switch to light theme'"
+          :aria-pressed="isLightTheme"
+          @click="toggleThemeMode"
+        >
+          <Sun v-if="isLightTheme" :size="18" :stroke-width="2" />
+          <Moon v-else :size="18" :stroke-width="2" />
+          <span>{{ themeMode }}</span>
+        </button>
         <button class="header-button logout-button" title="Logout" @click="handleLogout">
           <LogOut :size="18" :stroke-width="2" />
           <span>Logout</span>
@@ -121,9 +135,23 @@ onUnmounted(() => window.clearInterval(notificationTimer));
           <Menu v-else :size="23" :stroke-width="2" />
         </button>
       </div>
-      <RouterLink v-else class="header-button" to="/login">
-        Private Access
-      </RouterLink>
+      <div v-else class="header-account public-header-actions">
+        <button
+          class="theme-button"
+          type="button"
+          :title="isLightTheme ? 'Switch to dark theme' : 'Switch to light theme'"
+          :aria-label="isLightTheme ? 'Switch to dark theme' : 'Switch to light theme'"
+          :aria-pressed="isLightTheme"
+          @click="toggleThemeMode"
+        >
+          <Sun v-if="isLightTheme" :size="18" :stroke-width="2" />
+          <Moon v-else :size="18" :stroke-width="2" />
+          <span>{{ themeMode }}</span>
+        </button>
+        <RouterLink class="header-button" to="/login">
+          Private Access
+        </RouterLink>
+      </div>
     </header>
 
     <aside

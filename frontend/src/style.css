@@ -15,6 +15,24 @@
   font-family: Montserrat, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
 }
 
+main {
+  min-height: 100vh;
+  background: var(--black);
+  color: var(--text);
+}
+
+main.light-theme {
+  --black: #f6f7fb;
+  --panel: #ffffff;
+  --panel-soft: #f2f4f8;
+  --purple: #6d28d9;
+  --purple-light: #7c3aed;
+  --purple-dark: #ede9fe;
+  --text: #15101f;
+  --muted: #5f6675;
+  --line: rgba(15, 23, 42, 0.13);
+}
+
 * {
   box-sizing: border-box;
 }
@@ -175,6 +193,27 @@ textarea {
   border-radius: 7px;
   background: rgba(255, 255, 255, 0.08);
   color: #fff;
+}
+
+.theme-button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 46px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.08);
+  color: #fff;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 800;
+  padding: 0 12px;
+  text-transform: capitalize;
+}
+
+.theme-button:hover {
+  border-color: var(--purple-light);
+  background: rgba(124, 58, 237, 0.28);
 }
 
 .notification-button:hover,
@@ -3044,6 +3083,164 @@ footer {
 
 footer strong {
   color: #fff;
+}
+
+main.light-theme .site-header {
+  border-bottom-color: var(--line);
+  background: rgba(255, 255, 255, 0.84);
+}
+
+main.light-theme .app-sidebar {
+  background: #ffffff;
+}
+
+main.light-theme .brand,
+main.light-theme .header-account strong,
+main.light-theme .sidebar-user strong,
+main.light-theme .section-heading h2,
+main.light-theme .page-heading h1,
+main.light-theme .panel-copy h3,
+main.light-theme .storage-section-title h4,
+main.light-theme .dashboard-task-row strong,
+main.light-theme .service-row strong,
+main.light-theme .activity-row strong,
+main.light-theme footer strong,
+main.light-theme .upload-zone h4,
+main.light-theme .shared-file-row h4 {
+  color: var(--text);
+}
+
+main.light-theme .header-account span,
+main.light-theme .sidebar-group a,
+main.light-theme .sidebar-user span,
+main.light-theme .announcement-strip small,
+main.light-theme .categories small,
+main.light-theme .metrics span:not(.icon),
+main.light-theme .dashboard-task-row span,
+main.light-theme .service-row span,
+main.light-theme .activity-row p,
+main.light-theme .activity-row span,
+main.light-theme .upload-zone p {
+  color: var(--muted);
+}
+
+main.light-theme .notification-button,
+main.light-theme .theme-button,
+main.light-theme .menu-button,
+main.light-theme .secondary-button,
+main.light-theme .categories a,
+main.light-theme .dashboard-task-counts div,
+main.light-theme .service-row,
+main.light-theme .storage-stat,
+main.light-theme .file-picker,
+main.light-theme .share-row,
+main.light-theme .upload-zone {
+  border-color: var(--line);
+  background: rgba(255, 255, 255, 0.74);
+  color: var(--text);
+}
+
+main.light-theme .sidebar-group a:hover,
+main.light-theme .sidebar-group a.router-link-active,
+main.light-theme .notification-button:hover,
+main.light-theme .notification-button.router-link-active,
+main.light-theme .theme-button:hover,
+main.light-theme .secondary-button:hover {
+  background: #ede9fe;
+  color: var(--purple);
+}
+
+main.light-theme .announcement-strip {
+  border-bottom-color: rgba(124, 58, 237, 0.22);
+  background: #ffffff;
+  color: var(--text);
+}
+
+main.light-theme .main-banner {
+  background:
+    linear-gradient(90deg, rgba(246, 247, 251, 0.96), rgba(237, 233, 254, 0.82), rgba(246, 247, 251, 0.72)),
+    url('/template-assets/images/banner-bg.jpg') center/cover;
+}
+
+main.light-theme .search-panel,
+main.light-theme .feature-panel,
+main.light-theme .metrics article,
+main.light-theme .storage-sidebar,
+main.light-theme .profile-metrics article,
+main.light-theme .role-permission-card,
+main.light-theme .integration-row,
+main.light-theme .module-row,
+main.light-theme .chat-conversations,
+main.light-theme .chat-shell {
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--text);
+}
+
+main.light-theme .metrics article:hover,
+main.light-theme .categories a:hover {
+  background: #ede9fe;
+  color: var(--purple);
+}
+
+main.light-theme .metrics strong,
+main.light-theme .dashboard-task-counts strong,
+main.light-theme .status-panel strong {
+  color: var(--text);
+}
+
+main.light-theme .note-card,
+main.light-theme .file-row,
+main.light-theme .user-row,
+main.light-theme .search-result-row,
+main.light-theme .notification-row,
+main.light-theme .session-row,
+main.light-theme .reminder-card,
+main.light-theme .folder-row,
+main.light-theme .public-link-row {
+  border-color: var(--line);
+  background: #ffffff;
+  color: var(--text);
+}
+
+main.light-theme .note-card h4,
+main.light-theme .user-row h4,
+main.light-theme .file-row strong,
+main.light-theme .search-result-row h4,
+main.light-theme .notification-row strong,
+main.light-theme .reminder-card strong,
+main.light-theme .folder-row strong {
+  color: var(--text);
+}
+
+main.light-theme input,
+main.light-theme textarea,
+main.light-theme select,
+main.light-theme .user-row .account-edit-form input,
+main.light-theme .user-row .account-edit-form select,
+main.light-theme .user-row .password-reset-form input {
+  border-color: var(--line);
+  background: #ffffff;
+  color: var(--text);
+}
+
+main.light-theme .icon,
+main.light-theme .file-picker-button {
+  background: #ede9fe;
+  color: var(--purple);
+}
+
+main.light-theme .empty-state,
+main.light-theme .storage-info,
+main.light-theme .readonly-note,
+main.light-theme .panel-copy p {
+  color: var(--muted);
+}
+
+main.light-theme footer {
+  border-top-color: var(--line);
+  background: #ffffff;
+  color: var(--muted);
 }
 
 .chat-workspace {

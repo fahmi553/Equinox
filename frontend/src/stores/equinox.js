@@ -3,6 +3,7 @@ import { computed, ref } from 'vue';
 export const apiBase = import.meta.env.VITE_API_BASE_URL || '/api';
 export const token = ref(localStorage.getItem('equinox.token') || '');
 export const user = ref(JSON.parse(localStorage.getItem('equinox.user') || 'null'));
+export const themeMode = ref(localStorage.getItem('equinox.theme') || 'dark');
 export const authMode = ref('login');
 export const authForm = ref({ username: '', password: '', displayName: '', rememberMe: false });
 export const resetForm = ref({ username: '', code: '', password: '' });
@@ -120,6 +121,7 @@ export const preferences = computed(() => settings.value?.preferences || {
 export const defaultStartPage = computed(() => preferences.value.startPage || '/dashboard');
 export const platformName = computed(() => settings.value?.system?.platformName || 'Equinox');
 export const householdName = computed(() => settings.value?.system?.householdName || 'Family Workspace');
+export const isLightTheme = computed(() => themeMode.value === 'light');
 const defaultPage = 1;
 const defaultActivityLimit = 80;
 const defaultChatLimit = 120;
@@ -140,6 +142,11 @@ export const categories = [
   { moduleKey: 'guide', label: 'Guide', value: 'How to use', icon: 'CircleHelp', to: '/guide' },
   { moduleKey: 'activity', label: 'Activity', value: 'Recent history', icon: 'SquareActivity', to: '/activity' }
 ];
+
+export function toggleThemeMode() {
+  themeMode.value = themeMode.value === 'light' ? 'dark' : 'light';
+  localStorage.setItem('equinox.theme', themeMode.value);
+}
 
 export const metricCards = computed(() => [
   { moduleKey: 'notes', label: 'Notes', value: dashboard.value?.totals.notes ?? notes.value.length, icon: 'NotebookText' },
