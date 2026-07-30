@@ -87,10 +87,13 @@ onMounted(() => {
         <p>Find visible notes, tasks, bookmarks, announcements, tags, and future portal results.</p>
       </div>
       <form class="storage-search" @submit.prevent="searchEverything">
-        <input v-model="globalSearchQuery" autofocus placeholder="Search Equinox" />
+        <label class="field-label">
+          <span>Search Equinox</span>
+          <input v-model="globalSearchQuery" autofocus />
+        </label>
         <button class="main-button" type="submit">Search</button>
       </form>
-      <p v-if="globalSearchError" class="storage-error">{{ globalSearchError }}</p>
+      <p v-if="globalSearchError" class="storage-error" role="alert" aria-live="assertive">{{ globalSearchError }}</p>
     </section>
 
     <section v-if="searched" class="storage-section">

@@ -85,11 +85,17 @@ onMounted(loadProfile);
             <p>Keep your name and username clear for family members.</p>
           </div>
           <form class="family-form" @submit.prevent="updateProfile">
-            <input v-model="profileForm.displayName" placeholder="Display name" autocomplete="name" />
-            <input v-model="profileForm.username" placeholder="Username" autocomplete="username" />
+            <label class="field-label">
+              <span>Display name</span>
+              <input v-model="profileForm.displayName" autocomplete="name" />
+            </label>
+            <label class="field-label">
+              <span>Username</span>
+              <input v-model="profileForm.username" autocomplete="username" />
+            </label>
             <button class="main-button" type="submit">Save profile</button>
-            <p v-if="profileError" class="storage-error">{{ profileError }}</p>
-            <p v-if="profileMessage" class="success-note">{{ profileMessage }}</p>
+            <p v-if="profileError" class="storage-error" role="alert" aria-live="assertive">{{ profileError }}</p>
+            <p v-if="profileMessage" class="success-note" role="status" aria-live="polite">{{ profileMessage }}</p>
           </form>
         </section>
 
@@ -99,12 +105,21 @@ onMounted(loadProfile);
             <p>Update your password without changing your role or family permissions.</p>
           </div>
           <form class="family-form" @submit.prevent="changePassword">
-            <input v-model="passwordForm.currentPassword" type="password" placeholder="Current password" autocomplete="current-password" />
-            <input v-model="passwordForm.newPassword" type="password" placeholder="New password" autocomplete="new-password" />
-            <input v-model="passwordForm.confirmPassword" type="password" placeholder="Confirm new password" autocomplete="new-password" />
+            <label class="field-label">
+              <span>Current password</span>
+              <input v-model="passwordForm.currentPassword" type="password" autocomplete="current-password" />
+            </label>
+            <label class="field-label">
+              <span>New password</span>
+              <input v-model="passwordForm.newPassword" type="password" autocomplete="new-password" />
+            </label>
+            <label class="field-label">
+              <span>Confirm new password</span>
+              <input v-model="passwordForm.confirmPassword" type="password" autocomplete="new-password" />
+            </label>
             <button class="main-button" type="submit">Update password</button>
-            <p v-if="passwordError" class="storage-error">{{ passwordError }}</p>
-            <p v-if="passwordMessage" class="success-note">{{ passwordMessage }}</p>
+            <p v-if="passwordError" class="storage-error" role="alert" aria-live="assertive">{{ passwordError }}</p>
+            <p v-if="passwordMessage" class="success-note" role="status" aria-live="polite">{{ passwordMessage }}</p>
           </form>
         </section>
 

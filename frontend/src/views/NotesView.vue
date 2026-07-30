@@ -110,8 +110,14 @@ onMounted(async () => {
             <p>Private by default. Share only when family should be able to read it.</p>
           </div>
           <form class="note-form" @submit.prevent="createNote">
-            <input v-model="newNote.title" placeholder="Title" />
-            <textarea v-model="newNote.body" placeholder="Write a note"></textarea>
+            <label class="field-label">
+              <span>Title</span>
+              <input v-model="newNote.title" />
+            </label>
+            <label class="field-label">
+              <span>Note</span>
+              <textarea v-model="newNote.body"></textarea>
+            </label>
             <label class="share-row">
               <input v-model="newNote.isShared" type="checkbox" />
               <span>Share with family</span>
@@ -124,7 +130,7 @@ onMounted(async () => {
             </div>
             <button class="main-button" type="submit">Add note</button>
           </form>
-          <p v-if="noteError" class="storage-error">{{ noteError }}</p>
+          <p v-if="noteError" class="storage-error" role="alert" aria-live="assertive">{{ noteError }}</p>
         </section>
         <section v-else class="feature-panel">
           <div class="panel-copy">
@@ -175,8 +181,14 @@ onMounted(async () => {
             </template>
 
             <form v-else class="note-edit-form" @submit.prevent="submitEdit(note)">
-              <input v-model="editingNote.title" placeholder="Title" />
-              <textarea v-model="editingNote.body" placeholder="Write a note"></textarea>
+              <label class="field-label">
+                <span>Title</span>
+                <input v-model="editingNote.title" />
+              </label>
+              <label class="field-label">
+                <span>Note</span>
+                <textarea v-model="editingNote.body"></textarea>
+              </label>
               <label class="share-row">
                 <input v-model="editingNote.isShared" type="checkbox" />
                 <span>Share with family</span>

@@ -160,13 +160,16 @@ watch(() => route.query.user, async (memberId) => {
       </div>
 
       <form class="chat-compose" @submit.prevent="submitMessage">
-        <textarea v-model="newChatMessage" maxlength="1200" :placeholder="selectedChatUser ? 'Write a personal message' : 'Write a family message'"></textarea>
+        <label class="field-label">
+          <span>{{ selectedChatUser ? 'Personal message' : 'Family message' }}</span>
+          <textarea v-model="newChatMessage" maxlength="1200"></textarea>
+        </label>
         <button class="main-button" type="submit" :disabled="!canSend">
           <Send :size="18" :stroke-width="2" />
           <span>Send</span>
         </button>
       </form>
-      <p v-if="chatError" class="storage-error">{{ chatError }}</p>
+      <p v-if="chatError" class="storage-error" role="alert" aria-live="assertive">{{ chatError }}</p>
       </section>
     </section>
 

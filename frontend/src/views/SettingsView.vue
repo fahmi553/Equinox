@@ -36,8 +36,8 @@ onMounted(loadSettings);
       </button>
     </template>
 
-    <p v-if="settingsMessage" class="success-note">{{ settingsMessage }}</p>
-    <p v-if="settingsError" class="storage-error">{{ settingsError }}</p>
+    <p v-if="settingsMessage" class="success-note" role="status" aria-live="polite">{{ settingsMessage }}</p>
+    <p v-if="settingsError" class="storage-error" role="alert" aria-live="assertive">{{ settingsError }}</p>
 
     <section class="settings-grid">
       <section class="feature-panel">

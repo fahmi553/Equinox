@@ -212,7 +212,7 @@ This keeps Equinox portable across:
 - Vite
 - Pinia
 - Vue Router
-- Tailwind CSS
+- Shared CSS in `frontend/src/style.css`
 
 ### Backend
 

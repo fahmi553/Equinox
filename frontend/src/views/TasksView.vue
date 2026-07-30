@@ -162,20 +162,35 @@ onMounted(async () => {
           <p>Create a personal task or share a household to-do with family.</p>
         </div>
         <div class="form-stack">
-          <input v-model="newTask.title" placeholder="Task title" />
-          <textarea v-model="newTask.details" placeholder="Details"></textarea>
+          <label class="field-label">
+            <span>Task title</span>
+            <input v-model="newTask.title" />
+          </label>
+          <label class="field-label">
+            <span>Details</span>
+            <textarea v-model="newTask.details"></textarea>
+          </label>
           <div class="document-form-grid">
-            <select v-model="newTask.priority">
-              <option v-for="option in priorityOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </option>
-            </select>
-            <select v-model="newTask.status">
-              <option v-for="option in statusOptions" :key="option.value" :value="option.value">
-                {{ option.label }}
-              </option>
-            </select>
-            <input v-model="newTask.dueAt" type="date" />
+            <label class="field-label">
+              <span>Priority</span>
+              <select v-model="newTask.priority">
+                <option v-for="option in priorityOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+            <label class="field-label">
+              <span>Status</span>
+              <select v-model="newTask.status">
+                <option v-for="option in statusOptions" :key="option.value" :value="option.value">
+                  {{ option.label }}
+                </option>
+              </select>
+            </label>
+            <label class="field-label">
+              <span>Due date</span>
+              <input v-model="newTask.dueAt" type="date" />
+            </label>
           </div>
           <label class="share-row">
             <input v-model="newTask.isShared" type="checkbox" />
@@ -189,7 +204,7 @@ onMounted(async () => {
           </div>
           <button class="main-button" @click="createTask">Add task</button>
         </div>
-        <p v-if="taskError" class="storage-error">{{ taskError }}</p>
+        <p v-if="taskError" class="storage-error" role="alert" aria-live="assertive">{{ taskError }}</p>
       </section>
       <section v-else class="feature-panel reminder-create-panel">
         <div class="panel-copy">
@@ -244,20 +259,35 @@ onMounted(async () => {
             </template>
 
             <form v-else class="reminder-edit-form" @submit.prevent="submitEdit(task)">
-              <input v-model="editingTask.title" placeholder="Task title" />
-              <textarea v-model="editingTask.details" placeholder="Details"></textarea>
+              <label class="field-label">
+                <span>Task title</span>
+                <input v-model="editingTask.title" />
+              </label>
+              <label class="field-label">
+                <span>Details</span>
+                <textarea v-model="editingTask.details"></textarea>
+              </label>
               <div class="document-form-grid">
-                <select v-model="editingTask.priority">
-                  <option v-for="option in priorityOptions" :key="option.value" :value="option.value">
-                    {{ option.label }}
-                  </option>
-                </select>
-                <select v-model="editingTask.status">
-                  <option v-for="option in statusOptions" :key="option.value" :value="option.value">
-                    {{ option.label }}
-                  </option>
-                </select>
-                <input v-model="editingTask.dueAt" type="date" />
+                <label class="field-label">
+                  <span>Priority</span>
+                  <select v-model="editingTask.priority">
+                    <option v-for="option in priorityOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field-label">
+                  <span>Status</span>
+                  <select v-model="editingTask.status">
+                    <option v-for="option in statusOptions" :key="option.value" :value="option.value">
+                      {{ option.label }}
+                    </option>
+                  </select>
+                </label>
+                <label class="field-label">
+                  <span>Due date</span>
+                  <input v-model="editingTask.dueAt" type="date" />
+                </label>
               </div>
               <label class="share-row">
                 <input v-model="editingTask.isShared" type="checkbox" />

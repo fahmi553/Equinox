@@ -232,15 +232,27 @@ onMounted(async () => {
         </div>
 
         <form class="family-form" @submit.prevent="createFamilyUser">
-          <input v-model="newFamilyUser.displayName" placeholder="Display name" autocomplete="name" />
-          <input v-model="newFamilyUser.username" placeholder="Username" autocomplete="username" />
-          <input v-model="newFamilyUser.password" placeholder="Temporary password" type="password" autocomplete="new-password" />
-          <select v-model="newFamilyUser.role">
-            <option v-for="role in roleOptions" :key="role.value" :value="role.value">{{ role.label }}</option>
-          </select>
+          <label class="field-label">
+            <span>Display name</span>
+            <input v-model="newFamilyUser.displayName" autocomplete="name" />
+          </label>
+          <label class="field-label">
+            <span>Username</span>
+            <input v-model="newFamilyUser.username" autocomplete="username" />
+          </label>
+          <label class="field-label">
+            <span>Temporary password</span>
+            <input v-model="newFamilyUser.password" type="password" autocomplete="new-password" />
+          </label>
+          <label class="field-label">
+            <span>Role</span>
+            <select v-model="newFamilyUser.role">
+              <option v-for="role in roleOptions" :key="role.value" :value="role.value">{{ role.label }}</option>
+            </select>
+          </label>
           <button class="main-button" type="submit">Create account</button>
-          <p v-if="familyError" class="storage-error">{{ familyError }}</p>
-          <p v-if="familyMessage" class="success-note">{{ familyMessage }}</p>
+          <p v-if="familyError" class="storage-error" role="alert" aria-live="assertive">{{ familyError }}</p>
+          <p v-if="familyMessage" class="success-note" role="status" aria-live="polite">{{ familyMessage }}</p>
         </form>
 
         <section class="storage-section">
@@ -262,11 +274,20 @@ onMounted(async () => {
                 </p>
               </div>
               <form v-else class="account-edit-form" @submit.prevent="submitMemberEdit(member)">
-                <input v-model="editingMember.displayName" placeholder="Display name" />
-                <input v-model="editingMember.username" placeholder="Username" />
-                <select v-model="editingMember.role">
-                  <option v-for="role in roleOptions" :key="role.value" :value="role.value">{{ role.label }}</option>
-                </select>
+                <label class="field-label">
+                  <span>Display name</span>
+                  <input v-model="editingMember.displayName" />
+                </label>
+                <label class="field-label">
+                  <span>Username</span>
+                  <input v-model="editingMember.username" />
+                </label>
+                <label class="field-label">
+                  <span>Role</span>
+                  <select v-model="editingMember.role">
+                    <option v-for="role in roleOptions" :key="role.value" :value="role.value">{{ role.label }}</option>
+                  </select>
+                </label>
                 <div class="item-actions">
                   <button type="submit">Save</button>
                   <button type="button" @click="editingMember = null">Cancel</button>
@@ -278,7 +299,10 @@ onMounted(async () => {
                 <button v-if="passwordReset.userId !== member.id" @click="beginPasswordReset(member)">Reset password</button>
               </div>
               <form v-if="passwordReset.userId === member.id" class="password-reset-form" @submit.prevent="submitPasswordReset(member)">
-                <input v-model="passwordReset.password" type="password" placeholder="New temporary password" autocomplete="new-password" />
+                <label class="field-label">
+                  <span>New temporary password</span>
+                  <input v-model="passwordReset.password" type="password" autocomplete="new-password" />
+                </label>
                 <button type="submit">Save password</button>
                 <button type="button" @click="passwordReset = { userId: '', password: '' }">Cancel</button>
               </form>
@@ -311,17 +335,26 @@ onMounted(async () => {
           </div>
 
           <form class="announcement-form" @submit.prevent="createAnnouncement">
-            <input v-model="newAnnouncement.title" placeholder="Announcement title" />
-            <textarea v-model="newAnnouncement.body" placeholder="Message for the family"></textarea>
+            <label class="field-label">
+              <span>Announcement title</span>
+              <input v-model="newAnnouncement.title" />
+            </label>
+            <label class="field-label">
+              <span>Message for the family</span>
+              <textarea v-model="newAnnouncement.body"></textarea>
+            </label>
             <div class="announcement-options">
               <label class="share-row">
                 <input v-model="newAnnouncement.isPinned" type="checkbox" />
                 <span>Pin announcement</span>
               </label>
-              <input v-model="newAnnouncement.expiresAt" type="date" />
+              <label class="field-label">
+                <span>Expiry date</span>
+                <input v-model="newAnnouncement.expiresAt" type="date" />
+              </label>
             </div>
             <button class="main-button" type="submit">Post announcement</button>
-            <p v-if="announcementError" class="storage-error">{{ announcementError }}</p>
+            <p v-if="announcementError" class="storage-error" role="alert" aria-live="assertive">{{ announcementError }}</p>
           </form>
 
           <p v-if="!announcements.length" class="empty-state">No announcements yet.</p>
@@ -344,14 +377,23 @@ onMounted(async () => {
             </template>
 
             <form v-else class="announcement-form compact" @submit.prevent="submitAnnouncementEdit(announcement)">
-              <input v-model="editingAnnouncement.title" placeholder="Announcement title" />
-              <textarea v-model="editingAnnouncement.body" placeholder="Message for the family"></textarea>
+              <label class="field-label">
+                <span>Announcement title</span>
+                <input v-model="editingAnnouncement.title" />
+              </label>
+              <label class="field-label">
+                <span>Message for the family</span>
+                <textarea v-model="editingAnnouncement.body"></textarea>
+              </label>
               <div class="announcement-options">
                 <label class="share-row">
                   <input v-model="editingAnnouncement.isPinned" type="checkbox" />
                   <span>Pin announcement</span>
                 </label>
-                <input v-model="editingAnnouncement.expiresAt" type="date" />
+                <label class="field-label">
+                  <span>Expiry date</span>
+                  <input v-model="editingAnnouncement.expiresAt" type="date" />
+                </label>
               </div>
               <div class="item-actions">
                 <button type="submit">Save</button>

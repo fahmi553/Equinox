@@ -50,7 +50,7 @@ Keep these items in the pre-NAS roadmap:
 - [x] Shared adapter files use a read-only family download route
 - [x] Specific-user file permissions
 - [x] Direct adapter file download/delete ownership checks
-- [ ] Full access-control regression test suite
+- [x] Minimal access-control regression test suite
 
 Access-control test to keep running:
 

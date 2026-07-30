@@ -18,6 +18,8 @@ export const settings = ref(null);
 export const adapterContracts = ref(null);
 export const localFiles = ref(null);
 export const localFilesLoading = ref(false);
+export const fileUploadLoading = ref(false);
+export const fileUploadStatus = ref('');
 export const sharedFiles = ref(null);
 export const sharedFilesLoading = ref(false);
 export const fileShareUsers = ref([]);
@@ -101,6 +103,11 @@ export const preferences = computed(() => settings.value?.preferences || {
 export const defaultStartPage = computed(() => preferences.value.startPage || '/dashboard');
 export const platformName = computed(() => settings.value?.system?.platformName || 'Equinox');
 export const householdName = computed(() => settings.value?.system?.householdName || 'Family Workspace');
+const defaultPage = 1;
+const defaultActivityLimit = 80;
+const defaultChatLimit = 120;
+const defaultFileLimit = 80;
+const defaultSearchLimit = 12;
 
 export const categories = [
   { moduleKey: 'dashboard', label: 'Dashboard', value: 'Live hub', icon: 'LayoutDashboard', to: '/dashboard' },
@@ -131,6 +138,7 @@ const activityLabels = {
   'auth.password_reset_requested': 'Password reset requested',
   'auth.password_reset_completed': 'Password reset completed',
   'user.login': 'Signed in',
+  'user.login_failed': 'Sign-in failed',
   'user.logout': 'Signed out',
   'user.logout_all': 'Signed out all devices',
   'user.session_revoked': 'Session revoked',
@@ -144,6 +152,7 @@ const activityLabels = {
   'settings.system_updated': 'System settings updated',
   'settings.preferences_updated': 'Preferences updated',
   'settings.integration_updated': 'Integration settings updated',
+  'permission.denied': 'Permission denied',
   'announcement.created': 'Announcement posted',
   'announcement.updated': 'Announcement updated',
   'announcement.deleted': 'Announcement deleted',
@@ -160,6 +169,7 @@ const activityLabels = {
   'bookmark.updated': 'Bookmark updated',
   'bookmark.deleted': 'Bookmark deleted',
   'chat.message_sent': 'Chat message sent',
+  'upload.failed': 'Upload failed',
   'file_portal.folder_created': 'Folder created',
   'file_portal.file_uploaded': 'File uploaded',
   'file_portal.item_deleted': 'File deleted',
@@ -477,12 +487,14 @@ export async function loadSettings() {
   }
 }
 
-export async function loadLocalFiles(path = '', query = '') {
+export async function loadLocalFiles(path = '', query = '', page = defaultPage, limit = defaultFileLimit) {
   filePortalError.value = '';
   localFilesLoading.value = true;
   const params = new URLSearchParams();
   if (path) params.set('path', path);
   if (query) params.set('q', query);
+  params.set('page', String(page));
+  params.set('limit', String(limit));
 
   try {
     localFiles.value = await api(`/file-portal/local${params.toString() ? `?${params}` : ''}`);
@@ -495,12 +507,16 @@ export async function loadLocalFiles(path = '', query = '') {
   }
 }
 
-export async function loadSharedFiles() {
+export async function loadSharedFiles(page = defaultPage, limit = defaultFileLimit) {
   filePortalError.value = '';
   sharedFilesLoading.value = true;
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit)
+  });
 
   try {
-    sharedFiles.value = await api('/file-portal/shared');
+    sharedFiles.value = await api(`/file-portal/shared?${params}`);
     return true;
   } catch (err) {
     filePortalError.value = err.message;
@@ -539,8 +555,12 @@ export async function createLocalFolder(path, name) {
 
 export async function uploadLocalFile(path, file) {
   filePortalError.value = '';
+  fileUploadStatus.value = '';
   if (!file) {
     filePortalError.value = 'Choose a file first.';
+    return false;
+  }
+  if (fileUploadLoading.value) {
     return false;
   }
 
@@ -549,12 +569,18 @@ export async function uploadLocalFile(path, file) {
   formData.append('file', file);
 
   try {
+    fileUploadLoading.value = true;
+    fileUploadStatus.value = `Uploading ${file.name}...`;
     await api('/file-portal/local/files', { method: 'POST', body: formData });
     await loadLocalFiles(path);
+    fileUploadStatus.value = `${file.name} uploaded.`;
     return true;
   } catch (err) {
     filePortalError.value = err.message;
+    fileUploadStatus.value = '';
     return false;
+  } finally {
+    fileUploadLoading.value = false;
   }
 }
 
@@ -701,8 +727,12 @@ export async function loadDashboard() {
   }
 }
 
-export async function loadActivity() {
-  activity.value = await api('/activity');
+export async function loadActivity(page = defaultPage, limit = defaultActivityLimit) {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit)
+  });
+  activity.value = await api(`/activity?${params}`);
 }
 
 export async function loadNotifications() {
@@ -722,9 +752,13 @@ export async function markAllNotificationsRead() {
   await loadNotifications();
 }
 
-export async function loadChatMessages() {
-  const params = selectedChatUserId.value ? `?recipientId=${encodeURIComponent(selectedChatUserId.value)}` : '';
-  await loadOptionalCollection(`/chat/messages${params}`, chatMessages);
+export async function loadChatMessages(page = defaultPage, limit = defaultChatLimit) {
+  const params = new URLSearchParams({
+    page: String(page),
+    limit: String(limit)
+  });
+  if (selectedChatUserId.value) params.set('recipientId', selectedChatUserId.value);
+  await loadOptionalCollection(`/chat/messages?${params}`, chatMessages);
 }
 
 export async function loadChatUsers() {
@@ -802,7 +836,11 @@ export async function searchEverything() {
   }
 
   try {
-    const params = new URLSearchParams({ q: query });
+    const params = new URLSearchParams({
+      q: query,
+      page: String(defaultPage),
+      limit: String(defaultSearchLimit)
+    });
     globalSearchResults.value = await api(`/search?${params}`);
   } catch (err) {
     globalSearchError.value = err.message;

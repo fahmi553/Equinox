@@ -97,9 +97,18 @@ onMounted(async () => {
             <p>Private by default. Share useful household links when everyone should see them.</p>
           </div>
           <form class="note-form" @submit.prevent="createBookmark">
-            <input v-model="newBookmark.title" placeholder="Title" />
-            <input v-model="newBookmark.url" placeholder="https://example.com" />
-            <textarea v-model="newBookmark.notes" placeholder="Notes"></textarea>
+            <label class="field-label">
+              <span>Title</span>
+              <input v-model="newBookmark.title" />
+            </label>
+            <label class="field-label">
+              <span>URL</span>
+              <input v-model="newBookmark.url" placeholder="https://example.com" />
+            </label>
+            <label class="field-label">
+              <span>Notes</span>
+              <textarea v-model="newBookmark.notes"></textarea>
+            </label>
             <label class="share-row">
               <input v-model="newBookmark.isShared" type="checkbox" />
               <span>Share with family</span>
@@ -112,7 +121,7 @@ onMounted(async () => {
             </div>
             <button class="main-button" type="submit">Add bookmark</button>
           </form>
-          <p v-if="bookmarkError" class="storage-error">{{ bookmarkError }}</p>
+          <p v-if="bookmarkError" class="storage-error" role="alert" aria-live="assertive">{{ bookmarkError }}</p>
         </section>
         <section v-else class="feature-panel">
           <div class="panel-copy">
@@ -164,9 +173,18 @@ onMounted(async () => {
             </template>
 
             <form v-else class="note-edit-form" @submit.prevent="submitEdit(bookmark)">
-              <input v-model="editingBookmark.title" placeholder="Title" />
-              <input v-model="editingBookmark.url" placeholder="https://example.com" />
-              <textarea v-model="editingBookmark.notes" placeholder="Notes"></textarea>
+              <label class="field-label">
+                <span>Title</span>
+                <input v-model="editingBookmark.title" />
+              </label>
+              <label class="field-label">
+                <span>URL</span>
+                <input v-model="editingBookmark.url" placeholder="https://example.com" />
+              </label>
+              <label class="field-label">
+                <span>Notes</span>
+                <textarea v-model="editingBookmark.notes"></textarea>
+              </label>
               <label class="share-row">
                 <input v-model="editingBookmark.isShared" type="checkbox" />
                 <span>Share with family</span>

@@ -78,29 +78,49 @@ onMounted(loadAuthStatus);
           </div>
         </div>
         <template v-if="isResetRequest">
-          <input v-model="resetForm.username" placeholder="Username" autocomplete="username" />
+          <label class="field-label">
+            <span>Username</span>
+            <input v-model="resetForm.username" autocomplete="username" />
+          </label>
         </template>
         <template v-else-if="isResetConfirm">
-          <input v-model="resetForm.username" placeholder="Username" autocomplete="username" />
-          <input v-model="resetForm.code" placeholder="Reset code" autocomplete="one-time-code" />
-          <input v-model="resetForm.password" placeholder="New password" type="password" autocomplete="new-password" />
+          <label class="field-label">
+            <span>Username</span>
+            <input v-model="resetForm.username" autocomplete="username" />
+          </label>
+          <label class="field-label">
+            <span>Reset code</span>
+            <input v-model="resetForm.code" autocomplete="one-time-code" />
+          </label>
+          <label class="field-label">
+            <span>New password</span>
+            <input v-model="resetForm.password" type="password" autocomplete="new-password" />
+          </label>
         </template>
         <template v-else>
-          <input v-if="isSetup" v-model="authForm.displayName" placeholder="Display name" autocomplete="name" />
-          <input v-model="authForm.username" placeholder="Username" autocomplete="username" />
-          <input
-            v-model="authForm.password"
-            placeholder="Password"
-            type="password"
-            :autocomplete="isSetup ? 'new-password' : 'current-password'"
-          />
+          <label v-if="isSetup" class="field-label">
+            <span>Display name</span>
+            <input v-model="authForm.displayName" autocomplete="name" />
+          </label>
+          <label class="field-label">
+            <span>Username</span>
+            <input v-model="authForm.username" autocomplete="username" />
+          </label>
+          <label class="field-label">
+            <span>Password</span>
+            <input
+              v-model="authForm.password"
+              type="password"
+              :autocomplete="isSetup ? 'new-password' : 'current-password'"
+            />
+          </label>
           <label class="share-row auth-remember-row">
             <input v-model="authForm.rememberMe" type="checkbox" />
             <span>Remember this device</span>
           </label>
         </template>
-        <p v-if="resetCode" class="reset-code-box">{{ resetCode }}</p>
-        <p v-if="resetMessage" class="success-message">{{ resetMessage }}</p>
+        <p v-if="resetCode" class="reset-code-box" role="status" aria-live="polite">{{ resetCode }}</p>
+        <p v-if="resetMessage" class="success-message" role="status" aria-live="polite">{{ resetMessage }}</p>
         <button class="main-button" type="submit" :disabled="authLoading">{{ actionLabel }}</button>
         <button
           v-if="!isSetup && !isResetRequest && !isResetConfirm"
@@ -118,7 +138,7 @@ onMounted(loadAuthStatus);
         >
           Back to login
         </button>
-        <p v-if="error" class="error">{{ error }}</p>
+        <p v-if="error" class="error" role="alert" aria-live="assertive">{{ error }}</p>
       </form>
     </div>
   </section>

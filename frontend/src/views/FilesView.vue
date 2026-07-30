@@ -12,6 +12,8 @@ import {
   deleteLocalItem,
   fileShareUsers,
   filePortalError,
+  fileUploadLoading,
+  fileUploadStatus,
   latestPublicFileLink,
   loadFileShareUsers,
   loadLocalFiles,
@@ -108,7 +110,7 @@ async function submitFolder() {
 }
 
 async function submitUpload() {
-  if (!canUpload.value) return;
+  if (!canUpload.value || fileUploadLoading.value) return;
   if (await uploadLocalFile(currentPath.value, selectedFile.value)) {
     selectedFile.value = null;
     if (uploadInput.value) uploadInput.value.value = '';
@@ -348,15 +350,18 @@ onMounted(async () => {
           </div>
 
           <form class="storage-search" @submit.prevent="runSearch">
-            <input v-model="searchQuery" placeholder="Search local storage" />
+            <label class="field-label">
+              <span>Search local storage</span>
+              <input v-model="searchQuery" />
+            </label>
             <button class="secondary-button" type="submit">
               <Search :size="17" :stroke-width="2" />
               Search
             </button>
             <button class="secondary-button" type="button" @click="openPath(currentPath)">Clear</button>
           </form>
-          <p v-if="filePortalError" class="storage-error">{{ filePortalError }}</p>
-          <p v-else-if="localFilesLoading" class="storage-info">Loading files...</p>
+          <p v-if="filePortalError" class="storage-error" role="alert" aria-live="assertive">{{ filePortalError }}</p>
+          <p v-else-if="localFilesLoading" class="storage-info" role="status" aria-live="polite">Loading files...</p>
         </section>
 
         <section class="feature-grid">
@@ -365,7 +370,10 @@ onMounted(async () => {
               <h3>Create Folder</h3>
               <p>Add a folder inside the current location.</p>
             </div>
-            <input v-model="folderName" placeholder="Folder name" />
+            <label class="field-label">
+              <span>Folder name</span>
+              <input v-model="folderName" />
+            </label>
             <button class="main-button" type="submit">Create folder</button>
           </form>
 
@@ -374,15 +382,24 @@ onMounted(async () => {
               <h3>Upload File</h3>
               <p>Upload into the current local adapter folder.</p>
             </div>
-            <label class="file-picker">
-              <input ref="uploadInput" type="file" @change="selectedFile = $event.target.files?.[0] || null" />
+            <span class="field-label-text">File</span>
+            <label :class="['file-picker', { busy: fileUploadLoading }]">
+              <input
+                ref="uploadInput"
+                type="file"
+                :disabled="fileUploadLoading"
+                @change="selectedFile = $event.target.files?.[0] || null"
+              />
               <span class="file-picker-button">
                 <Upload :size="17" :stroke-width="2" />
                 Select file
               </span>
               <span class="file-picker-status">{{ selectedFile?.name || 'No file selected' }}</span>
             </label>
-            <button class="main-button" type="submit">Upload file</button>
+            <p v-if="fileUploadStatus" class="storage-info" role="status" aria-live="polite">{{ fileUploadStatus }}</p>
+            <button class="main-button" type="submit" :disabled="fileUploadLoading || !selectedFile">
+              {{ fileUploadLoading ? 'Uploading...' : 'Upload file' }}
+            </button>
           </form>
         </section>
 
@@ -538,8 +555,8 @@ onMounted(async () => {
               {{ sharedFileItems.length }} files
             </div>
           </div>
-          <p v-if="filePortalError" class="storage-error">{{ filePortalError }}</p>
-          <p v-else-if="sharedFilesLoading" class="storage-info">Loading shared files...</p>
+          <p v-if="filePortalError" class="storage-error" role="alert" aria-live="assertive">{{ filePortalError }}</p>
+          <p v-else-if="sharedFilesLoading" class="storage-info" role="status" aria-live="polite">Loading shared files...</p>
         </section>
 
         <section class="feature-panel portal-list-panel">

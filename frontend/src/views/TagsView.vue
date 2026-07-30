@@ -73,15 +73,21 @@ onMounted(loadTags);
             <p>Private by default. Share a tag when family users should see it in their tag list.</p>
           </div>
           <form class="note-form" @submit.prevent="createTag">
-            <input v-model="newTag.name" placeholder="Tag name" />
-            <input v-model="newTag.color" type="color" />
+            <label class="field-label">
+              <span>Tag name</span>
+              <input v-model="newTag.name" />
+            </label>
+            <label class="field-label">
+              <span>Tag colour</span>
+              <input v-model="newTag.color" type="color" />
+            </label>
             <label class="share-row">
               <input v-model="newTag.isShared" type="checkbox" />
               <span>Share tag</span>
             </label>
             <button class="main-button" type="submit">Create tag</button>
           </form>
-          <p v-if="tagError" class="storage-error">{{ tagError }}</p>
+          <p v-if="tagError" class="storage-error" role="alert" aria-live="assertive">{{ tagError }}</p>
         </section>
         <section v-else class="feature-panel">
           <div class="panel-copy">
@@ -117,8 +123,14 @@ onMounted(loadTags);
             </template>
 
             <form v-else class="note-edit-form" @submit.prevent="submitEdit(tag)">
-              <input v-model="editingTag.name" placeholder="Tag name" />
-              <input v-model="editingTag.color" type="color" />
+              <label class="field-label">
+                <span>Tag name</span>
+                <input v-model="editingTag.name" />
+              </label>
+              <label class="field-label">
+                <span>Tag colour</span>
+                <input v-model="editingTag.color" type="color" />
+              </label>
               <label class="share-row">
                 <input v-model="editingTag.isShared" type="checkbox" />
                 <span>Share tag</span>

@@ -31,6 +31,8 @@ const sessionTtlHours = Number(process.env.SESSION_TTL_HOURS || 12);
 const rememberSessionTtlDays = Number(process.env.REMEMBER_SESSION_TTL_DAYS || 30);
 const enforceHttps = process.env.ENFORCE_HTTPS === 'true';
 const trustProxy = process.env.TRUST_PROXY === 'true';
+const isProduction = process.env.NODE_ENV === 'production';
+const allowedCorsOrigins = corsOrigins(process.env.FRONTEND_URL);
 const localStorageMaxUploadMb = Number(process.env.LOCAL_STORAGE_MAX_UPLOAD_MB || 50);
 const rateLimitWindowMs = Number(process.env.RATE_LIMIT_WINDOW_MS || 60_000);
 const apiRateLimitMax = Number(process.env.API_RATE_LIMIT_MAX || 300);
@@ -178,6 +180,28 @@ function csvSetting(value, fallback) {
     .filter(Boolean);
 }
 
+function corsOrigins(value) {
+  const configured = csvValues(value);
+  if (configured.length) return configured;
+  return isProduction ? [] : ['http://localhost:5173', 'http://localhost:8080'];
+}
+
+function csvValues(value) {
+  return String(value || '')
+    .split(',')
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+function corsOrigin(origin, callback) {
+  if (!origin || allowedCorsOrigins.includes(origin)) {
+    return callback(null, true);
+  }
+
+  logAuditEvent('warn', 'cors.origin_denied', { origin });
+  return callback(null, false);
+}
+
 function isSecureRequest(req) {
   return req.secure || String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim() === 'https';
 }
@@ -196,7 +220,7 @@ function applySecurityHeaders(req, res, next) {
 }
 
 function requireHttps(req, res, next) {
-  if (!enforceHttps || req.path === '/health' || isSecureRequest(req)) {
+  if (!enforceHttps || req.path === '/health' || req.path.startsWith('/health/') || isSecureRequest(req)) {
     return next();
   }
 
@@ -205,6 +229,42 @@ function requireHttps(req, res, next) {
 
 function rateLimitNumber(value, fallback) {
   return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+function paginationParams(query, defaults = {}) {
+  const defaultLimit = defaults.limit || 50;
+  const maxLimit = defaults.maxLimit || 100;
+  const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
+  const requestedLimit = Number.parseInt(query.limit, 10) || defaultLimit;
+  const limit = Math.min(Math.max(requestedLimit, 1), maxLimit);
+  return {
+    page,
+    limit,
+    skip: (page - 1) * limit,
+    take: limit
+  };
+}
+
+function paginationMeta({ page, limit, total, returned }) {
+  const totalPages = Math.max(Math.ceil(total / limit), 1);
+  return {
+    page,
+    limit,
+    total,
+    returned,
+    totalPages,
+    hasNextPage: page < totalPages,
+    hasPreviousPage: page > 1
+  };
+}
+
+function setPaginationHeaders(res, meta) {
+  res.setHeader('X-Pagination-Page', String(meta.page));
+  res.setHeader('X-Pagination-Limit', String(meta.limit));
+  res.setHeader('X-Pagination-Total', String(meta.total));
+  res.setHeader('X-Pagination-Total-Pages', String(meta.totalPages));
+  res.setHeader('X-Pagination-Has-Next', String(meta.hasNextPage));
+  res.setHeader('X-Pagination-Has-Previous', String(meta.hasPreviousPage));
 }
 
 const rateLimitBuckets = new Map();
@@ -279,12 +339,22 @@ function uploadMiddleware(singleUpload) {
       if (!err) return next();
 
       if (err instanceof multer.MulterError && err.code === 'LIMIT_FILE_SIZE') {
+        void logUserAuditEvent('upload.failed', req, {
+          reason: 'file_size_limit',
+          limitMb: localStorageMaxUploadMb
+        });
         return res.status(413).json({
           message: `That file is too large. The current upload limit is ${localStorageMaxUploadMb} MB.`
         });
       }
 
-      console.error(err);
+      logAuditEvent('error', 'upload.failed', {
+        ...requestAuditMetadata(req),
+        userId: req.user?.id || 'unknown',
+        method: req.method,
+        path: req.originalUrl,
+        reason: err.message
+      });
       return res.status(400).json({ message: 'The file could not be uploaded. Please try a different file.' });
     });
   };
@@ -320,7 +390,7 @@ function validateUploadedFile(file) {
 
 app.use(applySecurityHeaders);
 app.use(requireHttps);
-app.use(cors({ origin: process.env.FRONTEND_URL || true }));
+app.use(cors({ origin: corsOrigin }));
 app.use(express.json());
 app.use(apiRateLimiter);
 
@@ -501,11 +571,12 @@ function isModuleEnabled(key) {
 }
 
 function requireModule(key) {
-  return (_req, res, next) => {
+  return async (req, res, next) => {
     if (isModuleEnabled(key)) {
       return next();
     }
 
+    await logUserAuditEvent('permission.denied', req, { reason: 'module_disabled', module: key });
     return res.status(404).json({ message: 'This Equinox module is currently disabled.' });
   };
 }
@@ -518,6 +589,34 @@ async function logActivity(action, userId, metadata = undefined, visibility = 'P
       metadata: { ...(metadata || {}), visibility }
     }
   });
+}
+
+function logAuditEvent(level, event, metadata = {}) {
+  const payload = {
+    event,
+    at: new Date().toISOString(),
+    ...metadata
+  };
+  const logger = level === 'error' ? console.error : level === 'warn' ? console.warn : console.info;
+  logger(JSON.stringify(payload));
+}
+
+async function logUserAuditEvent(action, req, metadata = {}, visibility = 'PRIVATE') {
+  if (!req.user?.id) return;
+  try {
+    await logActivity(action, req.user.id, {
+      ...metadata,
+      ...requestAuditMetadata(req),
+      method: req.method,
+      path: req.originalUrl
+    }, visibility);
+  } catch (err) {
+    logAuditEvent('error', 'audit_log_failed', {
+      action,
+      userId: req.user.id,
+      error: err.message
+    });
+  }
 }
 
 function requestAuditMetadata(req) {
@@ -603,6 +702,11 @@ async function requireAuth(req, res, next) {
   const token = header.startsWith('Bearer ') ? header.slice(7) : null;
 
   if (!token) {
+    logAuditEvent('warn', 'auth.missing_token', {
+      ...requestAuditMetadata(req),
+      method: req.method,
+      path: req.originalUrl
+    });
     return res.status(401).json({ message: 'Missing authorization token.' });
   }
 
@@ -620,6 +724,12 @@ async function requireAuth(req, res, next) {
     }) : null;
 
     if (!session || !session.user) {
+      logAuditEvent('warn', 'auth.invalid_session', {
+        ...requestAuditMetadata(req),
+        method: req.method,
+        path: req.originalUrl,
+        userId: payload.id || 'unknown'
+      });
       return res.status(401).json({ message: 'Session expired. Please sign in again.' });
     }
 
@@ -631,12 +741,18 @@ async function requireAuth(req, res, next) {
     });
     return next();
   } catch {
+    logAuditEvent('warn', 'auth.invalid_token', {
+      ...requestAuditMetadata(req),
+      method: req.method,
+      path: req.originalUrl
+    });
     return res.status(401).json({ message: 'Invalid or expired token.' });
   }
 }
 
-function requireAdmin(req, res, next) {
+async function requireAdmin(req, res, next) {
   if (req.user.role !== 'ADMIN') {
+    await logUserAuditEvent('permission.denied', req, { reason: 'admin_required', role: req.user.role });
     return res.status(403).json({ message: 'Admin access required.' });
   }
 
@@ -667,6 +783,7 @@ function requireCapability(permission) {
       return next();
     }
 
+    await logUserAuditEvent('permission.denied', req, { reason: 'capability_required', permission });
     return res.status(403).json({ message: 'This account does not have permission for that action.' });
   };
 }
@@ -1256,8 +1373,44 @@ function serializeAnnouncement(item) {
   };
 }
 
-app.get('/health', (_req, res) => {
-  res.json({ status: 'ok', service: 'equinox-api' });
+async function databaseHealth() {
+  const startedAt = Date.now();
+  await prisma.$queryRaw`SELECT 1`;
+  return {
+    status: 'ok',
+    latencyMs: Date.now() - startedAt
+  };
+}
+
+app.get('/health', async (_req, res) => {
+  try {
+    const database = await databaseHealth();
+    res.json({
+      status: 'ok',
+      service: 'equinox-api',
+      database
+    });
+  } catch (err) {
+    res.status(503).json({
+      status: 'degraded',
+      service: 'equinox-api',
+      database: {
+        status: 'error',
+        message: 'Database health check failed.'
+      }
+    });
+  }
+});
+
+app.get('/health/db', async (_req, res) => {
+  try {
+    res.json(await databaseHealth());
+  } catch (err) {
+    res.status(503).json({
+      status: 'error',
+      message: 'Database health check failed.'
+    });
+  }
 });
 
 app.get('/auth/status', async (_req, res) => {
@@ -1333,9 +1486,19 @@ app.post('/auth/register', async (_req, res) => {
 
 app.post('/auth/login', authRateLimiter, async (req, res) => {
   const { username, password, rememberMe = false } = req.body;
-  const user = await prisma.user.findUnique({ where: { username: String(username || '').trim() } });
+  const cleanUsername = String(username || '').trim();
+  const user = await prisma.user.findUnique({ where: { username: cleanUsername } });
 
   if (!user || !(await bcrypt.compare(password || '', user.passwordHash))) {
+    const metadata = {
+      username: cleanUsername,
+      ...requestAuditMetadata(req)
+    };
+    if (user) {
+      await logActivity('user.login_failed', user.id, metadata);
+    } else {
+      logAuditEvent('warn', 'user.login_failed', metadata);
+    }
     return res.status(401).json({ message: 'Invalid username or password.' });
   }
 
@@ -1709,11 +1872,12 @@ app.patch('/settings/integrations/:key', requireAuth, requireAdmin, async (req, 
 });
 
 app.get('/activity', requireAuth, requireModule('activity'), async (req, res) => {
+  const pagination = paginationParams(req.query, { limit: 80, maxLimit: 200 });
   const [viewer, activity] = await Promise.all([
     prisma.user.findUnique({ where: { id: req.user.id } }),
     prisma.activityLog.findMany({
       orderBy: { createdAt: 'desc' },
-      take: 240,
+      take: Math.min((pagination.skip + pagination.take) * 3, 1000),
       include: { user: true }
     })
   ]);
@@ -1722,7 +1886,15 @@ app.get('/activity', requireAuth, requireModule('activity'), async (req, res) =>
     return res.status(401).json({ message: 'User not found.' });
   }
 
-  res.json(visibleActivity(activity, viewer, 80).map(serializeActivity));
+  const visibleItems = activity.filter((item) => canViewActivity(item, viewer));
+  const pageItems = visibleItems.slice(pagination.skip, pagination.skip + pagination.take);
+  const meta = paginationMeta({
+    ...pagination,
+    total: visibleItems.length,
+    returned: pageItems.length
+  });
+  setPaginationHeaders(res, meta);
+  res.json(pageItems.map(serializeActivity));
 });
 
 app.get('/profile', requireAuth, async (req, res) => {
@@ -1820,6 +1992,7 @@ app.get('/chat/users', requireAuth, requireModule('chat'), requireCapability('ca
 
 app.get('/chat/messages', requireAuth, requireModule('chat'), requireCapability('canUseChat'), async (req, res) => {
   const recipientId = String(req.query.recipientId || '').trim();
+  const pagination = paginationParams(req.query, { limit: 120, maxLimit: 200 });
   const where = recipientId
     ? {
         OR: [
@@ -1828,12 +2001,22 @@ app.get('/chat/messages', requireAuth, requireModule('chat'), requireCapability(
         ]
       }
     : { recipientId: null };
-  const messages = await prisma.chatMessage.findMany({
-    where,
-    orderBy: { createdAt: 'desc' },
-    take: 120,
-    include: { author: true }
+  const [total, messages] = await Promise.all([
+    prisma.chatMessage.count({ where }),
+    prisma.chatMessage.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      skip: pagination.skip,
+      take: pagination.take,
+      include: { author: true }
+    })
+  ]);
+  const meta = paginationMeta({
+    ...pagination,
+    total,
+    returned: messages.length
   });
+  setPaginationHeaders(res, meta);
 
   res.json(messages.reverse().map((message) => ({
     ...message,
@@ -2378,6 +2561,7 @@ app.delete('/bookmarks/:id', requireAuth, requireModule('bookmarks'), async (req
 
 app.get('/search', requireAuth, requireModule('search'), async (req, res) => {
   const query = String(req.query.q || '').trim();
+  const pagination = paginationParams(req.query, { limit: 12, maxLimit: 50 });
   const viewer = await prisma.user.findUnique({
     where: { id: req.user.id },
     select: Object.fromEntries(['id', 'role', ...permissionKeys].map((key) => [key, true]))
@@ -2403,7 +2587,8 @@ app.get('/search', requireAuth, requireModule('search'), async (req, res) => {
       announcements: [],
       tags: [],
       adapterResults: [],
-      adapterSources
+      adapterSources,
+      pagination: paginationMeta({ ...pagination, total: 0, returned: 0 })
     });
   }
 
@@ -2450,35 +2635,41 @@ app.get('/search', requireAuth, requireModule('search'), async (req, res) => {
     isModuleEnabled('notes') ? prisma.note.findMany({
       where: { AND: [accessibleNoteWhere(req.user), noteMatch] },
       orderBy: { updatedAt: 'desc' },
-      take: 12,
+      skip: pagination.skip,
+      take: pagination.take,
       include: { owner: true, tags: true }
     }) : [],
     isModuleEnabled('tasks') ? prisma.task.findMany({
       where: { AND: [accessibleTaskWhere(req.user), taskMatch] },
       orderBy: [{ status: 'asc' }, { dueAt: 'asc' }],
-      take: 12,
+      skip: pagination.skip,
+      take: pagination.take,
       include: { owner: true, tags: true }
     }) : [],
     isModuleEnabled('bookmarks') ? prisma.bookmark.findMany({
       where: { AND: [accessibleBookmarkWhere(req.user), bookmarkMatch] },
       orderBy: { updatedAt: 'desc' },
-      take: 12,
+      skip: pagination.skip,
+      take: pagination.take,
       include: { owner: true, tags: true }
     }) : [],
     canSearchAnnouncements ? prisma.announcement.findMany({
       where: { AND: [activeAnnouncementWhere(), announcementMatch] },
       orderBy: [{ isPinned: 'desc' }, { createdAt: 'desc' }],
-      take: 12,
+      skip: pagination.skip,
+      take: pagination.take,
       include: { author: true }
     }) : [],
     isModuleEnabled('tags') ? prisma.tag.findMany({
       where: { AND: [accessibleTagWhere(req.user), tagMatch] },
       orderBy: { name: 'asc' },
-      take: 12,
+      skip: pagination.skip,
+      take: pagination.take,
       include: { owner: true }
     }) : [],
-    isModuleEnabled('storage') ? localAdapterSearchResults(query, req.user) : []
+    isModuleEnabled('storage') ? localAdapterSearchResults(query, req.user, pagination) : []
   ]);
+  const returned = notes.length + tasks.length + bookmarks.length + announcements.length + tags.length + adapterResults.length;
 
   res.json({
     query,
@@ -2503,11 +2694,16 @@ app.get('/search', requireAuth, requireModule('search'), async (req, res) => {
       owner: publicUser(item.owner)
     })),
     adapterResults,
-    adapterSources
+    adapterSources,
+    pagination: {
+      page: pagination.page,
+      limit: pagination.limit,
+      returned
+    }
   });
 });
 
-async function localAdapterSearchResults(query, user) {
+async function localAdapterSearchResults(query, user, pagination = { skip: 0, take: 12 }) {
   const metadataRows = await prisma.adapterFileMetadata.findMany({
     where: {
       adapterKey: 'local-storage',
@@ -2523,7 +2719,8 @@ async function localAdapterSearchResults(query, user) {
       ]
     },
     orderBy: { updatedAt: 'desc' },
-    take: 12,
+    skip: pagination.skip,
+    take: pagination.take,
     include: { owner: true, tags: true }
   });
 
@@ -2545,7 +2742,7 @@ async function localAdapterSearchResults(query, user) {
   }
 
   const metadataByPath = new Map(metadataRows.map((item) => [item.path, item]));
-  const enriched = await enrichAdapterItems([...byPath.values()].slice(0, 12), user, 'local-storage');
+  const enriched = await enrichAdapterItems([...byPath.values()].slice(pagination.skip, pagination.skip + pagination.take), user, 'local-storage');
   return enriched.map((item) => ({
     id: item.id,
     sourceKey: 'storage',
@@ -2601,7 +2798,7 @@ async function sharedLocalAdapterFiles(user) {
   return files;
 }
 
-function sendAdapterError(res, error) {
+function sendAdapterError(res, error, req = null) {
   const response = adapterErrorResponse(error);
   const status = response.code === adapterErrorCodes.NOT_FOUND ? 404
     : response.code === adapterErrorCodes.CONFLICT ? 409
@@ -2609,19 +2806,36 @@ function sendAdapterError(res, error) {
         : response.code === adapterErrorCodes.INVALID_PATH ? 400
           : 500;
 
+  if (req) {
+    const event = req.method === 'POST' && req.originalUrl.includes('/files') ? 'upload.failed' : 'api.error';
+    logAuditEvent(status >= 500 ? 'error' : 'warn', event, {
+      ...requestAuditMetadata(req),
+      userId: req.user?.id || 'unknown',
+      method: req.method,
+      path: req.originalUrl,
+      status,
+      code: response.code
+    });
+  }
+
   return res.status(status).json(response);
 }
 
 app.get('/file-portal/local', requireAuth, requireModule('storage'), async (req, res) => {
   try {
+    const pagination = paginationParams(req.query, { limit: 80, maxLimit: 200 });
     const [listing, health] = await Promise.all([
       localStorageAdapter.list(req.query.path, req.query.q),
       localStorageAdapter.health()
     ]);
-    const [folders, files] = await Promise.all([
+    const [allFolders, allFiles] = await Promise.all([
       enrichAdapterItems(listing.folders, req.user, localStorageAdapter.key),
       enrichAdapterItems(listing.files, req.user, localStorageAdapter.key)
     ]);
+    const allItems = [...allFolders, ...allFiles];
+    const pageItems = allItems.slice(pagination.skip, pagination.skip + pagination.take);
+    const folders = pageItems.filter((item) => item.type === 'folder');
+    const files = pageItems.filter((item) => item.type === 'file');
 
     res.json({
       adapter: {
@@ -2632,10 +2846,15 @@ app.get('/file-portal/local', requireAuth, requireModule('storage'), async (req,
       },
       ...listing,
       folders,
-      files
+      files,
+      pagination: paginationMeta({
+        ...pagination,
+        total: allItems.length,
+        returned: pageItems.length
+      })
     });
   } catch (err) {
-    return sendAdapterError(res, err);
+    return sendAdapterError(res, err, req);
   }
 });
 
@@ -2645,7 +2864,7 @@ app.post('/file-portal/local/folders', requireAuth, requireModule('storage'), as
     await logActivity('file_portal.folder_created', req.user.id, { name: folder.name }, 'PRIVATE');
     res.status(201).json(folder);
   } catch (err) {
-    return sendAdapterError(res, err);
+    return sendAdapterError(res, err, req);
   }
 });
 
@@ -2663,7 +2882,7 @@ app.post('/file-portal/local/files', requireAuth, requireModule('storage'), uplo
     const [enrichedFile] = await enrichAdapterItems([file], req.user, localStorageAdapter.key);
     res.status(201).json(enrichedFile);
   } catch (err) {
-    return sendAdapterError(res, err);
+    return sendAdapterError(res, err, req);
   }
 });
 
@@ -2685,7 +2904,7 @@ app.patch('/file-portal/local/metadata', requireAuth, requireModule('storage'), 
     }, metadata.isShared ? 'SHARED' : 'PRIVATE');
     res.json(serializeAdapterMetadata(metadata, req.user));
   } catch (err) {
-    return sendAdapterError(res, err);
+    return sendAdapterError(res, err, req);
   }
 });
 
@@ -2732,7 +2951,7 @@ app.patch('/file-portal/local/share-users', requireAuth, requireModule('storage'
 
     res.json(serializeAdapterMetadata(updated, req.user));
   } catch (err) {
-    return sendAdapterError(res, err);
+    return sendAdapterError(res, err, req);
   }
 });
 
@@ -2767,7 +2986,7 @@ app.post('/file-portal/local/public-links', requireAuth, requireModule('storage'
       downloadCount: link.downloadCount
     });
   } catch (err) {
-    return sendAdapterError(res, err);
+    return sendAdapterError(res, err, req);
   }
 });
 
@@ -2799,7 +3018,7 @@ app.delete('/file-portal/local/public-links/:id', requireAuth, requireModule('st
     await logActivity('file_portal.public_link_revoked', req.user.id, { linkId: target.id }, 'PRIVATE');
     res.status(204).end();
   } catch (err) {
-    return sendAdapterError(res, err);
+    return sendAdapterError(res, err, req);
   }
 });
 
@@ -2826,13 +3045,15 @@ app.get('/public/file/:token', async (req, res) => {
     res.setHeader('Content-Length', file.size);
     res.download(localStorageAdapter.resolvePath(link.metadata.path), file.name);
   } catch (err) {
-    return sendAdapterError(res, err);
+    return sendAdapterError(res, err, req);
   }
 });
 
 app.get('/file-portal/shared', requireAuth, requireModule('storage'), async (req, res) => {
   try {
-    const files = await sharedLocalAdapterFiles(req.user);
+    const pagination = paginationParams(req.query, { limit: 80, maxLimit: 200 });
+    const allFiles = await sharedLocalAdapterFiles(req.user);
+    const files = allFiles.slice(pagination.skip, pagination.skip + pagination.take);
     res.json({
       adapter: {
         key: localStorageAdapter.key,
@@ -2840,12 +3061,17 @@ app.get('/file-portal/shared', requireAuth, requireModule('storage'), async (req
       },
       files,
       summary: {
-        files: files.length,
-        visibleSize: files.reduce((total, item) => total + (item.size || 0), 0)
-      }
+        files: allFiles.length,
+        visibleSize: allFiles.reduce((total, item) => total + (item.size || 0), 0)
+      },
+      pagination: paginationMeta({
+        ...pagination,
+        total: allFiles.length,
+        returned: files.length
+      })
     });
   } catch (err) {
-    return sendAdapterError(res, err);
+    return sendAdapterError(res, err, req);
   }
 });
 
@@ -2866,7 +3092,7 @@ app.get('/file-portal/shared/download', requireAuth, requireModule('storage'), a
     res.setHeader('Content-Length', file.size);
     res.download(localStorageAdapter.resolvePath(metadata.path), file.name);
   } catch (err) {
-    return sendAdapterError(res, err);
+    return sendAdapterError(res, err, req);
   }
 });
 
@@ -2877,7 +3103,7 @@ app.get('/file-portal/local/download', requireAuth, requireModule('storage'), as
     res.setHeader('Content-Length', file.size);
     res.download(localStorageAdapter.resolvePath(req.query.path), file.name);
   } catch (err) {
-    return sendAdapterError(res, err);
+    return sendAdapterError(res, err, req);
   }
 });
 
@@ -2907,7 +3133,7 @@ app.delete('/file-portal/local/items', requireAuth, requireModule('storage'), as
     await logActivity('file_portal.item_deleted', req.user.id, { path: itemPath }, 'PRIVATE');
     res.status(204).end();
   } catch (err) {
-    return sendAdapterError(res, err);
+    return sendAdapterError(res, err, req);
   }
 });
 
@@ -3489,7 +3715,7 @@ app.post('/files', requireAuth, requireCapability('canUploadFiles'), uploadRateL
     if (req.file?.path) {
       await unlink(req.file.path).catch(() => undefined);
     }
-    return sendAdapterError(res, err);
+    return sendAdapterError(res, err, req);
   }
 
   const folderId = req.body.folderId || null;
@@ -3610,8 +3836,15 @@ app.delete('/files/:id', requireAuth, async (req, res) => {
   res.status(204).end();
 });
 
-app.use((err, _req, res, _next) => {
-  console.error(err);
+app.use((err, req, res, _next) => {
+  logAuditEvent('error', 'api.error', {
+    ...requestAuditMetadata(req),
+    userId: req.user?.id || 'unknown',
+    method: req.method,
+    path: req.originalUrl,
+    status: 500,
+    error: err.message
+  });
   res.status(500).json({ message: 'Something went wrong.' });
 });
 
@@ -3619,6 +3852,10 @@ await ensureRolePermissions();
 await ensureModuleSettings();
 await ensureSettingsFoundation();
 
-app.listen(port, () => {
-  console.log(`Equinox API listening on http://localhost:${port}`);
-});
+if (process.env.NODE_ENV !== 'test') {
+  app.listen(port, () => {
+    console.log(`Equinox API listening on http://localhost:${port}`);
+  });
+}
+
+export { app, prisma };
