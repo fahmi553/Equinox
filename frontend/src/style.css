@@ -2495,6 +2495,27 @@ h1 {
   font-weight: 700;
 }
 
+.upload-progress {
+  width: 100%;
+  height: 10px;
+  overflow: hidden;
+  border: 0;
+  border-radius: 7px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.upload-progress::-webkit-progress-bar {
+  background: rgba(255, 255, 255, 0.18);
+}
+
+.upload-progress::-webkit-progress-value {
+  background: #5eead4;
+}
+
+.upload-progress::-moz-progress-bar {
+  background: #5eead4;
+}
+
 .file-row {
   display: grid;
   grid-template-columns: 82px minmax(0, 1fr) auto;

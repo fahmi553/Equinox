@@ -142,16 +142,16 @@ Examples to block or quarantine before family use:
 ### Application Logs
 
 - [x] Useful activity logs for major app actions
-- [ ] Login failure logs
-- [ ] Upload failure logs
-- [ ] API error logs
-- [ ] Permission denial logs
+- [x] Login failure logs
+- [x] Upload failure logs
+- [x] API error logs
+- [x] Permission denial logs
 
 ### Error Logs
 
 - [ ] Store stack traces server-side
 - [x] Avoid exposing most internal errors to users
-- [ ] Standard error response format across all endpoints
+- [x] Standard error response format across all endpoints
 
 Bad user-facing response:
 
@@ -175,8 +175,8 @@ The detailed stack trace should stay in logs.
 
 - [x] Docker health check for PostgreSQL
 - [x] Basic API/service status on dashboard
-- [ ] Dedicated server online check endpoint
-- [ ] Database online check endpoint
+- [x] Dedicated server online check endpoint
+- [x] Database online check endpoint
 - [ ] NAS online check endpoint
 
 ### Alerts
@@ -191,11 +191,11 @@ The detailed stack trace should stay in logs.
 
 Every API should validate:
 
-- [ ] Required fields
-- [ ] String length
-- [ ] Allowed values
+- [x] Required fields
+- [x] String length
+- [x] Allowed values
 - [ ] Email format if email accounts are added
-- [ ] File path safety for every adapter route
+- [x] File path safety for every adapter route
 
 ### Database Optimization
 
@@ -207,10 +207,10 @@ Every API should validate:
 
 ### Pagination
 
-- [ ] File listing pagination
-- [ ] Search pagination
-- [ ] Activity log pagination
-- [ ] Chat pagination
+- [x] File listing pagination
+- [x] Search pagination
+- [x] Activity log pagination
+- [x] Chat pagination
 
 Avoid loading unbounded lists when a user may eventually have thousands of records.
 
@@ -250,7 +250,7 @@ This is a must before relying on Equinox for real household data.
 
 - [ ] Low disk warning
 - [ ] Storage quota support
-- [ ] Failed upload cleanup
+- [x] Failed upload cleanup
 - [ ] Adapter unavailable state
 - [ ] Adapter retry behavior
 
@@ -259,10 +259,10 @@ This is a must before relying on Equinox for real household data.
 ### Error Handling
 
 - [ ] Friendly error messages everywhere
-- [ ] Upload progress indicators
+- [x] Upload progress indicators
 - [ ] Retry failed uploads
-- [ ] Empty states for every module
-- [ ] Loading states for every module
+- [x] Empty states for every module
+- [x] Loading states for every module
 
 ### Notifications
 
@@ -287,8 +287,8 @@ This is a must before relying on Equinox for real household data.
 - [x] Delete
 - [x] Share
 - [x] Permission changes
-- [ ] Login failures
-- [ ] Download events for shared files
+- [x] Login failures
+- [x] Download events for shared files
 
 ## Phase 11 - Before Family/Public Release
 
@@ -305,20 +305,20 @@ This is a must before relying on Equinox for real household data.
 
 - [ ] Backups running
 - [ ] Restore tested
-- [ ] Logs working
-- [ ] Health checks working
+- [x] Logs working
+- [x] Health checks working
 
 ### Access Control
 
-- [ ] User cannot access another user's private data
-- [ ] Shared access works correctly
-- [ ] Shared revoke works correctly
-- [ ] Admin permissions tested
-- [ ] Non-admin permissions tested
+- [x] User cannot access another user's private data
+- [x] Shared access works correctly
+- [x] Shared revoke works correctly
+- [x] Admin permissions tested
+- [x] Non-admin permissions tested
 
 ### Performance
 
-- [ ] Pagination implemented
+- [x] Pagination implemented
 - [ ] Database indexes reviewed
 - [ ] Large file uploads tested
 - [ ] Large file listing tested
@@ -337,13 +337,13 @@ These are the items I would not skip before relying on Equinox for real family u
 - [ ] Database backup
 - [ ] File backup
 - [ ] Restore test
-- [ ] Pagination
+- [x] Pagination
 - [ ] Storage permissions documented and tested
 
 ## Current Recommended Order Before NAS
 
-1. Pagination for files, search, activity, and chat.
-2. Backup scripts for PostgreSQL and Local Storage.
-3. Health endpoints and dashboard warnings.
-4. HTTPS/reverse-proxy deployment notes for the final NAS environment.
-5. Access-control regression tests.
+1. Backup scripts for PostgreSQL and Local Storage.
+2. Dashboard warnings for low storage, backup failure, and failed uploads.
+3. HTTPS/reverse-proxy deployment notes for the final NAS environment.
+4. Expanded access-control regression tests.
+5. Standard error response format and structured logging.

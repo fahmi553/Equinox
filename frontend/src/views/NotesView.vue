@@ -11,8 +11,10 @@ import {
   newNote,
   noteError,
   notes,
+  notesLoading,
   permissions,
   tags,
+  tagsLoading,
   toggleNoteShare,
   updateNote
 } from '../stores/equinox';
@@ -156,7 +158,8 @@ onMounted(async () => {
               {{ tag.name }}
             </button>
           </div>
-          <p v-if="!visibleNotes.length" class="empty-state">No notes here.</p>
+          <p v-if="notesLoading || tagsLoading" class="storage-info" role="status" aria-live="polite">Loading notes...</p>
+          <p v-else-if="!visibleNotes.length" class="empty-state">No notes here.</p>
 
           <article v-for="note in visibleNotes" :key="note.id" class="note-card">
             <template v-if="editingNote?.id !== note.id">

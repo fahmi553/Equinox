@@ -4,6 +4,7 @@ import AppPage from '../components/AppPage.vue';
 import TagChips from '../components/TagChips.vue';
 import {
   globalSearchError,
+  globalSearchLoading,
   globalSearchQuery,
   globalSearchResults,
   isModuleEnabled,
@@ -101,7 +102,8 @@ onMounted(() => {
         <h4>Results</h4>
         <span>{{ resultCount }}</span>
       </div>
-      <p v-if="!resultCount" class="empty-state">No matching visible items.</p>
+      <p v-if="globalSearchLoading" class="storage-info" role="status" aria-live="polite">Searching...</p>
+      <p v-else-if="!resultCount" class="empty-state">No matching visible items.</p>
 
       <section v-for="group in visibleGroups" :key="group.key" class="feature-panel search-group">
         <div class="storage-section-title">

@@ -28,6 +28,7 @@ import {
   announcements,
   categories,
   dashboard,
+  dashboardLoading,
   firstName,
   householdName,
   isAdmin,
@@ -147,7 +148,8 @@ onMounted(loadAll);
         <h3>Family Announcements</h3>
         <p>Shared household notices from the family admins.</p>
       </div>
-      <p v-if="!activeAnnouncements.length" class="empty-state">No announcements right now.</p>
+      <p v-if="dashboardLoading" class="storage-info" role="status" aria-live="polite">Loading announcements...</p>
+      <p v-else-if="!activeAnnouncements.length" class="empty-state">No announcements right now.</p>
       <article v-for="announcement in activeAnnouncements.slice(0, 4)" :key="announcement.id" class="announcement-card compact">
         <div class="announcement-card-heading">
           <span v-if="announcement.isPinned">Pinned</span>
@@ -182,7 +184,8 @@ onMounted(loadAll);
             <strong>{{ taskSummary.today }}</strong>
           </div>
         </div>
-        <p v-if="!taskSummary.recent.length" class="empty-state">No active tasks right now.</p>
+        <p v-if="dashboardLoading" class="storage-info" role="status" aria-live="polite">Loading tasks...</p>
+        <p v-else-if="!taskSummary.recent.length" class="empty-state">No active tasks right now.</p>
         <article v-for="task in taskSummary.recent" :key="task.id" class="dashboard-task-row">
           <div>
             <strong>{{ task.title }}</strong>
@@ -199,6 +202,8 @@ onMounted(loadAll);
             <p>Core services now and integration placeholders for later phases.</p>
           </div>
         </div>
+        <p v-if="dashboardLoading" class="storage-info" role="status" aria-live="polite">Loading service status...</p>
+        <p v-else-if="!services.length" class="empty-state">No service status available.</p>
         <article v-for="service in services" :key="service.id" class="service-row">
           <span class="service-icon" aria-hidden="true">
             <component :is="iconMap[service.id]" :size="22" :stroke-width="1.8" />
@@ -223,7 +228,8 @@ onMounted(loadAll);
           </div>
           <RouterLink class="panel-link" to="/files">Open files</RouterLink>
         </div>
-        <p v-if="!fileSummary.recentImportant.length" class="empty-state">No important files yet.</p>
+        <p v-if="dashboardLoading" class="storage-info" role="status" aria-live="polite">Loading files...</p>
+        <p v-else-if="!fileSummary.recentImportant.length" class="empty-state">No important files yet.</p>
         <article v-for="file in fileSummary.recentImportant" :key="file.id" class="dashboard-task-row">
           <div>
             <strong>{{ file.name }}</strong>
@@ -239,7 +245,8 @@ onMounted(loadAll);
         <h3>Recent Activity</h3>
         <p>The latest account and content events across Equinox.</p>
       </div>
-      <p v-if="!(dashboard?.activity || []).length" class="empty-state">No activity yet.</p>
+      <p v-if="dashboardLoading" class="storage-info" role="status" aria-live="polite">Loading activity...</p>
+      <p v-else-if="!(dashboard?.activity || []).length" class="empty-state">No activity yet.</p>
       <article v-for="activity in dashboard?.activity || []" :key="activity.id" class="activity-row">
         <div>
           <strong>{{ activityLabel(activity.action) }}</strong>

@@ -6,17 +6,20 @@ import ConfirmDialog from '../components/ConfirmDialog.vue';
 import {
   announcementError,
   announcements,
+  announcementsLoading,
   createAnnouncement,
   createFamilyUser,
   deleteAnnouncement,
   familyError,
   familyMessage,
   familyUsers,
+  familyUsersLoading,
   loadAnnouncements,
   loadFamilyUsers,
   loadRolePermissions,
   newAnnouncement,
   rolePermissions,
+  rolePermissionsLoading,
   saveAnnouncement,
   toggleAnnouncementPin,
   resetFamilyUserPassword,
@@ -201,6 +204,8 @@ onMounted(async () => {
             <span>{{ rolePermissions.length }}</span>
           </div>
           <div class="role-permission-list">
+            <p v-if="rolePermissionsLoading" class="storage-info" role="status" aria-live="polite">Loading role defaults...</p>
+            <p v-else-if="!rolePermissions.length" class="empty-state">No role defaults found.</p>
             <article v-for="roleItem in rolePermissions" :key="roleItem.role" class="role-permission-card">
               <div>
                 <h4>{{ roleItem.role }}</h4>
@@ -260,7 +265,8 @@ onMounted(async () => {
             <h4>Users</h4>
             <span>{{ familyUsers.length }}</span>
           </div>
-          <p v-if="!familyUsers.length" class="empty-state">No family accounts yet.</p>
+          <p v-if="familyUsersLoading" class="storage-info" role="status" aria-live="polite">Loading family accounts...</p>
+          <p v-else-if="!familyUsers.length" class="empty-state">No family accounts yet.</p>
           <div v-else class="user-list">
             <article v-for="member in familyUsers" :key="member.id" class="user-row">
               <div class="user-avatar" aria-hidden="true">
@@ -357,7 +363,8 @@ onMounted(async () => {
             <p v-if="announcementError" class="storage-error" role="alert" aria-live="assertive">{{ announcementError }}</p>
           </form>
 
-          <p v-if="!announcements.length" class="empty-state">No announcements yet.</p>
+          <p v-if="announcementsLoading" class="storage-info" role="status" aria-live="polite">Loading announcements...</p>
+          <p v-else-if="!announcements.length" class="empty-state">No announcements yet.</p>
           <article v-for="announcement in announcements" :key="announcement.id" class="announcement-card">
             <template v-if="editingAnnouncement?.id !== announcement.id">
               <div class="announcement-card-heading">

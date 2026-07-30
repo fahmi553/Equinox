@@ -10,6 +10,7 @@ import {
   permissions,
   tagError,
   tags,
+  tagsLoading,
   updateTag
 } from '../stores/equinox';
 
@@ -101,7 +102,8 @@ onMounted(loadTags);
             <h4>Visible tags</h4>
             <span>{{ tags.length }}</span>
           </div>
-          <p v-if="!tags.length" class="empty-state">No tags yet.</p>
+          <p v-if="tagsLoading" class="storage-info" role="status" aria-live="polite">Loading tags...</p>
+          <p v-else-if="!tags.length" class="empty-state">No tags yet.</p>
 
           <article v-for="tag in tags" :key="tag.id" class="note-card">
             <template v-if="editingTag?.id !== tag.id">

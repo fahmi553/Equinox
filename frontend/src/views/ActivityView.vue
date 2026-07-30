@@ -1,7 +1,7 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue';
 import AppPage from '../components/AppPage.vue';
-import { activity, activityDetail, activityLabel, loadActivity } from '../stores/equinox';
+import { activity, activityDetail, activityLabel, activityLoading, loadActivity } from '../stores/equinox';
 
 const activeType = ref('');
 const activityTypes = computed(() => [...new Set(activity.value.map((item) => item.action.split('.')[0]))]);
@@ -35,7 +35,8 @@ onMounted(loadActivity);
           {{ type }}
         </button>
       </div>
-      <p v-if="!visibleActivity.length" class="empty-state">No activity yet.</p>
+      <p v-if="activityLoading" class="storage-info" role="status" aria-live="polite">Loading activity...</p>
+      <p v-else-if="!visibleActivity.length" class="empty-state">No activity yet.</p>
       <article v-for="item in visibleActivity" :key="item.id" class="activity-row detailed">
         <div>
           <strong>{{ activityLabel(item.action) }}</strong>

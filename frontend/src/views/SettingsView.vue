@@ -8,6 +8,7 @@ import {
   loadSettings,
   settings,
   settingsError,
+  settingsLoading,
   settingsMessage,
   updatePreferences,
   updateSystemSettings
@@ -38,6 +39,7 @@ onMounted(loadSettings);
 
     <p v-if="settingsMessage" class="success-note" role="status" aria-live="polite">{{ settingsMessage }}</p>
     <p v-if="settingsError" class="storage-error" role="alert" aria-live="assertive">{{ settingsError }}</p>
+    <p v-if="settingsLoading" class="storage-info" role="status" aria-live="polite">Loading settings...</p>
 
     <section class="settings-grid">
       <section class="feature-panel">
@@ -103,6 +105,7 @@ onMounted(loadSettings);
           <p>Standard adapters are registered now. Capabilities and health are defined before file browsing is built.</p>
         </div>
       </div>
+      <p v-if="!settingsLoading && !integrations.length" class="empty-state">No integrations registered.</p>
       <article v-for="integration in integrations" :key="integration.key" class="integration-row">
         <div>
           <strong>{{ integration.label }}</strong>
@@ -125,6 +128,7 @@ onMounted(loadSettings);
           <p>These descriptors are the API shape the File Portal will use for local storage, WebDAV, and later NAS services.</p>
         </div>
       </div>
+      <p v-if="!settingsLoading && !adapters.length" class="empty-state">No adapter contracts registered.</p>
       <article v-for="adapter in adapters" :key="adapter.key" class="integration-row adapter-contract-row">
         <div>
           <strong>{{ adapter.label }}</strong>

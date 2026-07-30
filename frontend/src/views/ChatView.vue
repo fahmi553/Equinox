@@ -7,7 +7,9 @@ import ConfirmDialog from '../components/ConfirmDialog.vue';
 import {
   chatError,
   chatMessages,
+  chatMessagesLoading,
   chatUsers,
+  chatUsersLoading,
   deleteChatMessage,
   isAdmin,
   loadChatMessages,
@@ -118,6 +120,7 @@ watch(() => route.query.user, async (memberId) => {
             <small>Everyone</small>
           </span>
         </button>
+        <p v-if="chatUsersLoading" class="storage-info" role="status" aria-live="polite">Loading conversations...</p>
         <button
           v-for="member in chatUsers"
           :key="member.id"
@@ -142,7 +145,8 @@ watch(() => route.query.user, async (memberId) => {
       </div>
 
       <div ref="chatList" class="chat-message-list" aria-live="polite">
-        <p v-if="!chatMessages.length" class="empty-state">No messages yet. Start the conversation.</p>
+        <p v-if="chatMessagesLoading" class="storage-info" role="status" aria-live="polite">Loading messages...</p>
+        <p v-else-if="!chatMessages.length" class="empty-state">No messages yet. Start the conversation.</p>
         <article
           v-for="message in chatMessages"
           :key="message.id"

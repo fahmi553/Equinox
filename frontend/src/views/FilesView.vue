@@ -13,6 +13,7 @@ import {
   fileShareUsers,
   filePortalError,
   fileUploadLoading,
+  fileUploadProgress,
   fileUploadStatus,
   latestPublicFileLink,
   loadFileShareUsers,
@@ -396,6 +397,13 @@ onMounted(async () => {
               </span>
               <span class="file-picker-status">{{ selectedFile?.name || 'No file selected' }}</span>
             </label>
+            <progress
+              v-if="fileUploadLoading || fileUploadProgress"
+              class="upload-progress"
+              :value="fileUploadProgress"
+              max="100"
+              :aria-label="`Upload progress ${fileUploadProgress}%`"
+            ></progress>
             <p v-if="fileUploadStatus" class="storage-info" role="status" aria-live="polite">{{ fileUploadStatus }}</p>
             <button class="main-button" type="submit" :disabled="fileUploadLoading || !selectedFile">
               {{ fileUploadLoading ? 'Uploading...' : 'Upload file' }}

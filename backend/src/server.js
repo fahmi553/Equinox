@@ -234,9 +234,22 @@ function rateLimitNumber(value, fallback) {
 function paginationParams(query, defaults = {}) {
   const defaultLimit = defaults.limit || 50;
   const maxLimit = defaults.maxLimit || 100;
-  const page = Math.max(Number.parseInt(query.page, 10) || 1, 1);
-  const requestedLimit = Number.parseInt(query.limit, 10) || defaultLimit;
-  const limit = Math.min(Math.max(requestedLimit, 1), maxLimit);
+  const rawPage = query.page;
+  const rawLimit = query.limit;
+  const page = query.page === undefined ? 1 : Number.parseInt(rawPage, 10);
+  const requestedLimit = query.limit === undefined ? defaultLimit : Number.parseInt(rawLimit, 10);
+
+  if (query.page !== undefined && (!Number.isInteger(page) || page < 1 || String(rawPage).trim() !== String(page))) {
+    throw new ValidationError('Page must be a positive whole number.');
+  }
+  if (query.limit !== undefined && (!Number.isInteger(requestedLimit) || requestedLimit < 1 || String(rawLimit).trim() !== String(requestedLimit))) {
+    throw new ValidationError('Limit must be a positive whole number.');
+  }
+  if (requestedLimit > maxLimit) {
+    throw new ValidationError(`Limit must be ${maxLimit} or fewer.`);
+  }
+
+  const limit = requestedLimit;
   return {
     page,
     limit,
@@ -267,6 +280,142 @@ function setPaginationHeaders(res, meta) {
   res.setHeader('X-Pagination-Has-Previous', String(meta.hasPreviousPage));
 }
 
+const errorCodesByStatus = {
+  400: 'BAD_REQUEST',
+  401: 'UNAUTHORIZED',
+  403: 'FORBIDDEN',
+  404: 'NOT_FOUND',
+  409: 'CONFLICT',
+  410: 'GONE',
+  413: 'PAYLOAD_TOO_LARGE',
+  415: 'UNSUPPORTED_MEDIA_TYPE',
+  429: 'RATE_LIMITED',
+  500: 'INTERNAL_SERVER_ERROR'
+};
+
+function errorResponse(status, message, code) {
+  return {
+    error: {
+      code: code || errorCodesByStatus[status] || 'API_ERROR',
+      message
+    }
+  };
+}
+
+function sendError(res, status, message, code) {
+  return res.status(status).json(errorResponse(status, message, code));
+}
+
+class ValidationError extends Error {
+  constructor(message, code = 'VALIDATION_ERROR') {
+    super(message);
+    this.name = 'ValidationError';
+    this.code = code;
+    this.status = 400;
+  }
+}
+
+function requiredString(source, field, label, maxLength) {
+  const value = boundedString(source?.[field], label, maxLength).trim();
+  if (!value) {
+    throw new ValidationError(`${label} is required.`);
+  }
+  return value;
+}
+
+function optionalString(source, field, label, maxLength, fallback = '') {
+  if (!Object.hasOwn(source || {}, field) || source[field] === null || source[field] === undefined) {
+    return fallback;
+  }
+  return boundedString(source[field], label, maxLength);
+}
+
+function boundedString(value, label, maxLength) {
+  const text = String(value ?? '');
+  if (maxLength && text.length > maxLength) {
+    throw new ValidationError(`${label} must be ${maxLength} characters or fewer.`);
+  }
+  return text;
+}
+
+function enumValue(value, allowed, label, fallback) {
+  const clean = String(value ?? fallback ?? '').trim().toUpperCase();
+  if (!allowed.includes(clean)) {
+    throw new ValidationError(`${label} must be one of: ${allowed.join(', ')}.`);
+  }
+  return clean;
+}
+
+function optionalEnumValue(source, field, allowed, label) {
+  if (typeof source?.[field] !== 'string') {
+    return undefined;
+  }
+  return enumValue(source[field], allowed, label);
+}
+
+function optionalBoolean(source, field, label) {
+  if (!Object.hasOwn(source || {}, field)) {
+    return undefined;
+  }
+  if (typeof source[field] !== 'boolean') {
+    throw new ValidationError(`${label} must be true or false.`);
+  }
+  return source[field];
+}
+
+function booleanValue(source, field, label, fallback = false) {
+  const value = optionalBoolean(source, field, label);
+  return value === undefined ? fallback : value;
+}
+
+function passwordValue(source, field, label, minLength = 8, maxLength = 256) {
+  const value = String(source?.[field] || '');
+  if (!value || value.length < minLength) {
+    throw new ValidationError(`${label} must be at least ${minLength} characters.`);
+  }
+  if (value.length > maxLength) {
+    throw new ValidationError(`${label} must be ${maxLength} characters or fewer.`);
+  }
+  return value;
+}
+
+function usernameValue(source, field = 'username') {
+  const username = requiredString(source, field, 'Username', 80).toLowerCase();
+  if (!/^[a-z0-9._-]{3,80}$/.test(username)) {
+    throw new ValidationError('Username must be 3 to 80 characters and use only letters, numbers, dots, underscores, or hyphens.');
+  }
+  return username;
+}
+
+function optionalDateValue(source, field, label) {
+  if (!Object.hasOwn(source || {}, field)) {
+    return undefined;
+  }
+  const value = optionalDate(source[field]);
+  if (value === undefined) {
+    throw new ValidationError(`${label} is invalid.`);
+  }
+  return value;
+}
+
+function adapterPathValue(value, label = 'File path', { required = false } = {}) {
+  const text = String(value ?? '').replaceAll('\\', '/').trim();
+  if (!text) {
+    if (required) {
+      throw new AdapterError(adapterErrorCodes.INVALID_PATH, `${label} is required.`);
+    }
+    return '';
+  }
+  if (text.length > 512 || text.includes('\0') || text.split('/').some((part) => part === '..')) {
+    throw new AdapterError(adapterErrorCodes.INVALID_PATH, `${label} is invalid.`);
+  }
+  return text;
+}
+
+function searchQueryValue(value, maxLength = 120) {
+  return boundedString(value ?? '', 'Search query', maxLength).trim();
+}
+
 const rateLimitBuckets = new Map();
 
 function requestRateLimitKey(req) {
@@ -295,7 +444,7 @@ function createRateLimiter({ keyPrefix, max, windowMs = rateLimitWindowMs, messa
     res.setHeader('RateLimit-Reset', String(Math.ceil((bucket.resetAt - now) / 1000)));
 
     if (bucket.count > limit) {
-      return res.status(429).json({ message });
+      return sendError(res, 429, message);
     }
 
     if (rateLimitBuckets.size > 5000) {
@@ -343,9 +492,7 @@ function uploadMiddleware(singleUpload) {
           reason: 'file_size_limit',
           limitMb: localStorageMaxUploadMb
         });
-        return res.status(413).json({
-          message: `That file is too large. The current upload limit is ${localStorageMaxUploadMb} MB.`
-        });
+        return sendError(res, 413, `That file is too large. The current upload limit is ${localStorageMaxUploadMb} MB.`);
       }
 
       logAuditEvent('error', 'upload.failed', {
@@ -355,7 +502,7 @@ function uploadMiddleware(singleUpload) {
         path: req.originalUrl,
         reason: err.message
       });
-      return res.status(400).json({ message: 'The file could not be uploaded. Please try a different file.' });
+      return sendError(res, 400, 'The file could not be uploaded. Please try a different file.');
     });
   };
 }
@@ -577,7 +724,7 @@ function requireModule(key) {
     }
 
     await logUserAuditEvent('permission.denied', req, { reason: 'module_disabled', module: key });
-    return res.status(404).json({ message: 'This Equinox module is currently disabled.' });
+    return sendError(res, 404, 'This Equinox module is currently disabled.');
   };
 }
 
@@ -707,7 +854,7 @@ async function requireAuth(req, res, next) {
       method: req.method,
       path: req.originalUrl
     });
-    return res.status(401).json({ message: 'Missing authorization token.' });
+    return sendError(res, 401, 'Missing authorization token.');
   }
 
   try {
@@ -730,7 +877,7 @@ async function requireAuth(req, res, next) {
         path: req.originalUrl,
         userId: payload.id || 'unknown'
       });
-      return res.status(401).json({ message: 'Session expired. Please sign in again.' });
+      return sendError(res, 401, 'Session expired. Please sign in again.');
     }
 
     req.user = { id: session.user.id, role: session.user.role };
@@ -746,14 +893,14 @@ async function requireAuth(req, res, next) {
       method: req.method,
       path: req.originalUrl
     });
-    return res.status(401).json({ message: 'Invalid or expired token.' });
+    return sendError(res, 401, 'Invalid or expired token.');
   }
 }
 
 async function requireAdmin(req, res, next) {
   if (req.user.role !== 'ADMIN') {
     await logUserAuditEvent('permission.denied', req, { reason: 'admin_required', role: req.user.role });
-    return res.status(403).json({ message: 'Admin access required.' });
+    return sendError(res, 403, 'Admin access required.');
   }
 
   return next();
@@ -776,7 +923,7 @@ function requireCapability(permission) {
     });
 
     if (!user) {
-      return res.status(401).json({ message: 'User not found.' });
+      return sendError(res, 401, 'User not found.');
     }
 
     if (permissionsFor(user)[permission]) {
@@ -784,7 +931,7 @@ function requireCapability(permission) {
     }
 
     await logUserAuditEvent('permission.denied', req, { reason: 'capability_required', permission });
-    return res.status(403).json({ message: 'This account does not have permission for that action.' });
+    return sendError(res, 403, 'This account does not have permission for that action.');
   };
 }
 
@@ -1023,13 +1170,19 @@ function accessibleBookmarkWhere(user) {
 }
 
 async function editableTagConnections(tagIds, user, operation = 'set') {
-  if (!Array.isArray(tagIds)) {
+  if (tagIds === undefined) {
     return undefined;
+  }
+  if (!Array.isArray(tagIds)) {
+    throw new ValidationError('Tag IDs must be an array.');
+  }
+  if (tagIds.length > 50) {
+    throw new ValidationError('Tag IDs must include 50 items or fewer.');
   }
 
   const tags = await prisma.tag.findMany({
     where: {
-      id: { in: tagIds },
+      id: { in: [...new Set(tagIds.map((id) => boundedString(id, 'Tag ID', 120)))] },
       ...ownedContentWhere(user)
     },
     select: { id: true }
@@ -1166,7 +1319,7 @@ async function upsertAdapterFileMetadata({ adapterKey = 'local-storage', item, u
 }
 
 async function ensureOwnedAdapterMetadata(pathValue, user) {
-  const target = localStorageAdapter.resolvePath(pathValue);
+  const target = localStorageAdapter.resolvePath(adapterPathValue(pathValue, 'File path', { required: true }));
   const item = await localStorageAdapter.itemFromPath(target);
 
   if (item.type !== 'file') {
@@ -1188,7 +1341,7 @@ async function ensureOwnedAdapterMetadata(pathValue, user) {
 }
 
 async function localAdapterMetadataForPath(pathValue) {
-  const target = localStorageAdapter.resolvePath(pathValue);
+  const target = localStorageAdapter.resolvePath(adapterPathValue(pathValue, 'File path', { required: true }));
   const item = await localStorageAdapter.itemFromPath(target);
 
   if (item.type !== 'file') {
@@ -1426,28 +1579,20 @@ app.get('/auth/me', requireAuth, async (req, res) => {
   const currentUser = await prisma.user.findUnique({ where: { id: req.user.id } });
 
   if (!currentUser) {
-    return res.status(401).json({ message: 'User not found.' });
+    return sendError(res, 401, 'User not found.');
   }
 
   res.json({ user: publicUser(currentUser) });
 });
 
 app.post('/auth/setup', authRateLimiter, async (req, res) => {
-  const { username, password, displayName } = req.body;
-  const cleanUsername = String(username || '').trim();
-  const cleanDisplayName = String(displayName || '').trim();
-
-  if (!cleanUsername || !password || !cleanDisplayName) {
-    return res.status(400).json({ message: 'Username, password, and display name are required.' });
-  }
-
-  if (String(password).length < 8) {
-    return res.status(400).json({ message: 'Password must be at least 8 characters.' });
-  }
+  const cleanUsername = usernameValue(req.body);
+  const cleanDisplayName = requiredString(req.body, 'displayName', 'Display name', 120);
+  const password = passwordValue(req.body, 'password', 'Password');
 
   const userCount = await prisma.user.count();
   if (userCount > 0) {
-    return res.status(409).json({ message: 'Equinox is already set up. Ask an admin to create your account.' });
+    return sendError(res, 409, 'Equinox is already set up. Ask an admin to create your account.');
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
@@ -1467,7 +1612,7 @@ app.post('/auth/setup', authRateLimiter, async (req, res) => {
     res.status(201).json({ token: session.token, user: publicUser(user), session: serializeSession(session.session) });
   } catch (err) {
     if (err.code === 'P2002') {
-      return res.status(409).json({ message: 'Username is already taken.' });
+      return sendError(res, 409, 'Username is already taken.');
     }
 
     throw err;
@@ -1478,15 +1623,16 @@ app.post('/auth/register', async (_req, res) => {
   const userCount = await prisma.user.count();
 
   if (userCount === 0) {
-    return res.status(410).json({ message: 'Use first-run setup to create the owner account.' });
+    return sendError(res, 410, 'Use first-run setup to create the owner account.');
   }
 
-  return res.status(403).json({ message: 'Public registration is disabled. Ask an admin to create your account.' });
+  return sendError(res, 403, 'Public registration is disabled. Ask an admin to create your account.');
 });
 
 app.post('/auth/login', authRateLimiter, async (req, res) => {
-  const { username, password, rememberMe = false } = req.body;
-  const cleanUsername = String(username || '').trim();
+  const password = String(req.body.password || '');
+  const rememberMe = booleanValue(req.body, 'rememberMe', 'Remember me', false);
+  const cleanUsername = usernameValue(req.body);
   const user = await prisma.user.findUnique({ where: { username: cleanUsername } });
 
   if (!user || !(await bcrypt.compare(password || '', user.passwordHash))) {
@@ -1499,7 +1645,7 @@ app.post('/auth/login', authRateLimiter, async (req, res) => {
     } else {
       logAuditEvent('warn', 'user.login_failed', metadata);
     }
-    return res.status(401).json({ message: 'Invalid username or password.' });
+    return sendError(res, 401, 'Invalid username or password.');
   }
 
   await logActivity('user.login', user.id, {
@@ -1563,7 +1709,7 @@ app.delete('/auth/sessions/:id', requireAuth, async (req, res) => {
   });
 
   if (!session) {
-    return res.status(404).json({ message: 'Session not found.' });
+    return sendError(res, 404, 'Session not found.');
   }
 
   await prisma.userSession.update({
@@ -1575,7 +1721,7 @@ app.delete('/auth/sessions/:id', requireAuth, async (req, res) => {
 });
 
 app.post('/auth/password-reset/request', passwordResetRateLimiter, async (req, res) => {
-  const username = String(req.body.username || '').trim();
+  const username = usernameValue(req.body);
   const user = username ? await prisma.user.findUnique({ where: { username } }) : null;
   let resetCode = null;
 
@@ -1602,17 +1748,13 @@ app.post('/auth/password-reset/request', passwordResetRateLimiter, async (req, r
 });
 
 app.post('/auth/password-reset/confirm', passwordResetRateLimiter, async (req, res) => {
-  const username = String(req.body.username || '').trim();
-  const code = String(req.body.code || '').trim();
-  const password = String(req.body.password || '');
-
-  if (!username || !code || password.length < 8) {
-    return res.status(400).json({ message: 'Username, reset code, and a new password of at least 8 characters are required.' });
-  }
+  const username = usernameValue(req.body);
+  const code = requiredString(req.body, 'code', 'Reset code', 200);
+  const password = passwordValue(req.body, 'password', 'New password');
 
   const user = await prisma.user.findUnique({ where: { username } });
   if (!user) {
-    return res.status(400).json({ message: 'Reset code is invalid or expired.' });
+    return sendError(res, 400, 'Reset code is invalid or expired.');
   }
 
   const reset = await prisma.passwordResetToken.findFirst({
@@ -1625,7 +1767,7 @@ app.post('/auth/password-reset/confirm', passwordResetRateLimiter, async (req, r
   });
 
   if (!reset) {
-    return res.status(400).json({ message: 'Reset code is invalid or expired.' });
+    return sendError(res, 400, 'Reset code is invalid or expired.');
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
@@ -1643,16 +1785,13 @@ app.post('/auth/password-reset/confirm', passwordResetRateLimiter, async (req, r
 });
 
 app.post('/auth/change-password', requireAuth, async (req, res) => {
-  const { currentPassword, newPassword } = req.body;
-
-  if (!currentPassword || !newPassword || String(newPassword).length < 8) {
-    return res.status(400).json({ message: 'Current password and a new password of at least 8 characters are required.' });
-  }
+  const currentPassword = passwordValue(req.body, 'currentPassword', 'Current password', 1);
+  const newPassword = passwordValue(req.body, 'newPassword', 'New password');
 
   const currentUser = await prisma.user.findUnique({ where: { id: req.user.id } });
 
   if (!currentUser || !(await bcrypt.compare(currentPassword, currentUser.passwordHash))) {
-    return res.status(401).json({ message: 'Current password is incorrect.' });
+    return sendError(res, 401, 'Current password is incorrect.');
   }
 
   const passwordHash = await bcrypt.hash(newPassword, 12);
@@ -1741,24 +1880,22 @@ app.patch('/modules/:key', requireAuth, requireAdmin, async (req, res) => {
   const module = moduleRegistry.find((item) => item.key === req.params.key);
 
   if (!module) {
-    return res.status(404).json({ message: 'Module not found.' });
+    return sendError(res, 404, 'Module not found.');
   }
   if (!module.isToggleable || module.healthState === 'planned') {
-    return res.status(400).json({ message: 'This module cannot be enabled or disabled.' });
+    return sendError(res, 400, 'This module cannot be enabled or disabled.');
   }
-  if (typeof req.body.isEnabled !== 'boolean') {
-    return res.status(400).json({ message: 'isEnabled must be true or false.' });
-  }
+  const isEnabled = booleanValue(req.body, 'isEnabled', 'Module enabled');
 
   await prisma.moduleSetting.update({
     where: { key: module.key },
-    data: { isEnabled: req.body.isEnabled }
+    data: { isEnabled }
   });
   await loadModuleSettings();
   await logActivity('module.updated', req.user.id, {
     key: module.key,
     label: module.label,
-    isEnabled: req.body.isEnabled
+    isEnabled
   });
   res.json(serializeModule(module));
 });
@@ -1794,13 +1931,16 @@ app.patch('/settings/system', requireAuth, requireAdmin, async (req, res) => {
   const data = {};
 
   for (const key of Object.keys(systemSettingSeeds)) {
-    if (typeof req.body[key] === 'string' && req.body[key].trim()) {
-      data[key] = req.body[key].trim().slice(0, 80);
+    if (typeof req.body[key] === 'string') {
+      const value = optionalString(req.body, key, key, 80).trim();
+      if (value) {
+        data[key] = value;
+      }
     }
   }
 
   if (!Object.keys(data).length) {
-    return res.status(400).json({ message: 'At least one system setting is required.' });
+    return sendError(res, 400, 'At least one system setting is required.');
   }
 
   await Promise.all(Object.entries(data).map(([key, value]) => prisma.systemSetting.upsert({
@@ -1817,22 +1957,22 @@ app.patch('/settings/preferences', requireAuth, async (req, res) => {
 
   if (typeof req.body.startPage === 'string') {
     if (!startPages.includes(req.body.startPage)) {
-      return res.status(400).json({ message: 'Choose a supported start page.' });
+      return sendError(res, 400, 'Choose a supported start page.');
     }
     data.startPage = req.body.startPage;
   }
-  if (typeof req.body.compactMode === 'boolean') {
-    data.compactMode = req.body.compactMode;
+  if (Object.hasOwn(req.body, 'compactMode')) {
+    data.compactMode = booleanValue(req.body, 'compactMode', 'Compact mode');
   }
   if (typeof req.body.dateFormat === 'string') {
     if (!dateFormats.includes(req.body.dateFormat)) {
-      return res.status(400).json({ message: 'Choose a supported date format.' });
+      return sendError(res, 400, 'Choose a supported date format.');
     }
     data.dateFormat = req.body.dateFormat;
   }
 
   if (!Object.keys(data).length) {
-    return res.status(400).json({ message: 'At least one preference is required.' });
+    return sendError(res, 400, 'At least one preference is required.');
   }
 
   const preferences = await prisma.userPreference.upsert({
@@ -1848,18 +1988,20 @@ app.patch('/settings/integrations/:key', requireAuth, requireAdmin, async (req, 
   const integration = await prisma.integrationSetting.findUnique({ where: { key: req.params.key } });
 
   if (!integration) {
-    return res.status(404).json({ message: 'Integration not found.' });
+    return sendError(res, 404, 'Integration not found.');
   }
 
   const data = {};
-  if (typeof req.body.isEnabled === 'boolean') {
-    data.isEnabled = req.body.isEnabled;
+  if (Object.hasOwn(req.body, 'isEnabled')) {
+    data.isEnabled = booleanValue(req.body, 'isEnabled', 'Integration enabled');
   }
   if (req.body.config && typeof req.body.config === 'object' && !Array.isArray(req.body.config)) {
     data.config = req.body.config;
+  } else if (Object.hasOwn(req.body, 'config') && req.body.config !== undefined && req.body.config !== null) {
+    return sendError(res, 400, 'Integration config must be an object.');
   }
   if (!Object.keys(data).length) {
-    return res.status(400).json({ message: 'At least one integration setting is required.' });
+    return sendError(res, 400, 'At least one integration setting is required.');
   }
 
   const updated = await prisma.integrationSetting.update({ where: { key: integration.key }, data });
@@ -1883,7 +2025,7 @@ app.get('/activity', requireAuth, requireModule('activity'), async (req, res) =>
   ]);
 
   if (!viewer) {
-    return res.status(401).json({ message: 'User not found.' });
+    return sendError(res, 401, 'User not found.');
   }
 
   const visibleItems = activity.filter((item) => canViewActivity(item, viewer));
@@ -1925,7 +2067,7 @@ app.get('/profile', requireAuth, async (req, res) => {
   ]);
 
   if (!profileUser) {
-    return res.status(404).json({ message: 'User not found.' });
+    return sendError(res, 404, 'User not found.');
   }
 
   res.json({
@@ -1971,7 +2113,7 @@ app.patch('/notifications/:id/read', requireAuth, async (req, res) => {
   });
 
   if (!notification) {
-    return res.status(404).json({ message: 'Notification not found.' });
+    return sendError(res, 404, 'Notification not found.');
   }
 
   const updated = await prisma.notification.update({
@@ -1991,7 +2133,7 @@ app.get('/chat/users', requireAuth, requireModule('chat'), requireCapability('ca
 });
 
 app.get('/chat/messages', requireAuth, requireModule('chat'), requireCapability('canUseChat'), async (req, res) => {
-  const recipientId = String(req.query.recipientId || '').trim();
+  const recipientId = optionalString(req.query, 'recipientId', 'Recipient', 120).trim();
   const pagination = paginationParams(req.query, { limit: 120, maxLimit: 200 });
   const where = recipientId
     ? {
@@ -2025,23 +2167,16 @@ app.get('/chat/messages', requireAuth, requireModule('chat'), requireCapability(
 });
 
 app.post('/chat/messages', requireAuth, requireModule('chat'), requireCapability('canUseChat'), async (req, res) => {
-  const body = String(req.body.body || '').trim();
-  const recipientId = String(req.body.recipientId || '').trim() || null;
-
-  if (!body) {
-    return res.status(400).json({ message: 'Message is required.' });
-  }
-  if (body.length > 1200) {
-    return res.status(400).json({ message: 'Message must be 1200 characters or fewer.' });
-  }
+  const body = requiredString(req.body, 'body', 'Message', 1200);
+  const recipientId = optionalString(req.body, 'recipientId', 'Recipient', 120).trim() || null;
   if (recipientId === req.user.id) {
-    return res.status(400).json({ message: 'Choose another family member for a personal chat.' });
+    return sendError(res, 400, 'Choose another family member for a personal chat.');
   }
   const recipient = recipientId
     ? await prisma.user.findUnique({ where: { id: recipientId } })
     : null;
   if (recipientId && (!recipient || !permissionsFor(recipient).canUseChat)) {
-    return res.status(404).json({ message: 'Chat recipient not found.' });
+    return sendError(res, 404, 'Chat recipient not found.');
   }
 
   const message = await prisma.chatMessage.create({
@@ -2073,7 +2208,7 @@ app.delete('/chat/messages/:id', requireAuth, requireModule('chat'), requireCapa
   });
 
   if (!message) {
-    return res.status(404).json({ message: 'Message not found.' });
+    return sendError(res, 404, 'Message not found.');
   }
 
   await prisma.chatMessage.delete({ where: { id: message.id } });
@@ -2087,19 +2222,22 @@ app.patch('/profile', requireAuth, async (req, res) => {
   const currentUser = await prisma.user.findUnique({ where: { id: req.user.id } });
 
   if (!currentUser) {
-    return res.status(401).json({ message: 'User not found.' });
+    return sendError(res, 401, 'User not found.');
   }
 
   const data = {};
-  if (typeof req.body.displayName === 'string' && req.body.displayName.trim()) {
-    data.displayName = req.body.displayName.trim();
+  if (typeof req.body.displayName === 'string') {
+    const displayName = optionalString(req.body, 'displayName', 'Display name', 120).trim();
+    if (displayName) {
+      data.displayName = displayName;
+    }
   }
-  if (typeof req.body.username === 'string' && req.body.username.trim()) {
-    data.username = req.body.username.trim();
+  if (typeof req.body.username === 'string') {
+    data.username = usernameValue(req.body);
   }
 
   if (!Object.keys(data).length) {
-    return res.status(400).json({ message: 'Display name or username is required.' });
+    return sendError(res, 400, 'Display name or username is required.');
   }
 
   try {
@@ -2111,7 +2249,7 @@ app.patch('/profile', requireAuth, async (req, res) => {
     res.json({ user: publicUser(updated) });
   } catch (err) {
     if (err.code === 'P2002') {
-      return res.status(409).json({ message: 'Username is already taken.' });
+      return sendError(res, 409, 'Username is already taken.');
     }
 
     throw err;
@@ -2134,12 +2272,12 @@ app.patch('/roles/:role/permissions', requireAuth, requireAdmin, async (req, res
   const role = String(req.params.role || '').toUpperCase();
 
   if (!roleNames.includes(role)) {
-    return res.status(404).json({ message: 'Role not found.' });
+    return sendError(res, 404, 'Role not found.');
   }
 
   const data = rolePermissionData(req.body);
   if (!Object.keys(data).length) {
-    return res.status(400).json({ message: 'At least one permission value is required.' });
+    return sendError(res, 400, 'At least one permission value is required.');
   }
 
   const updated = await prisma.rolePermission.update({ where: { role }, data });
@@ -2155,7 +2293,7 @@ app.get('/announcements', requireAuth, requireModule('announcements'), async (re
   });
 
   if (!viewer || !permissionsFor(viewer).canViewAnnouncements) {
-    return res.status(403).json({ message: 'This account cannot view family announcements.' });
+    return sendError(res, 403, 'This account cannot view family announcements.');
   }
 
   const includeExpired = req.user.role === 'ADMIN' && req.query.includeExpired === 'true';
@@ -2169,23 +2307,16 @@ app.get('/announcements', requireAuth, requireModule('announcements'), async (re
 });
 
 app.post('/announcements', requireAuth, requireModule('announcements'), requireAdmin, async (req, res) => {
-  const { title, body = '', isPinned = false, expiresAt = null } = req.body;
-  const cleanTitle = String(title || '').trim();
-  const cleanBody = String(body || '').trim();
-  const cleanExpiresAt = optionalDate(expiresAt);
-
-  if (!cleanTitle || !cleanBody) {
-    return res.status(400).json({ message: 'Title and message are required.' });
-  }
-  if (cleanExpiresAt === undefined) {
-    return res.status(400).json({ message: 'Announcement expiry date is invalid.' });
-  }
+  const cleanTitle = requiredString(req.body, 'title', 'Title', 160);
+  const cleanBody = requiredString(req.body, 'body', 'Message', 2000);
+  const cleanExpiresAt = optionalDateValue(req.body, 'expiresAt', 'Announcement expiry date') ?? null;
+  const isPinned = booleanValue(req.body, 'isPinned', 'Pinned', false);
 
   const announcement = await prisma.announcement.create({
     data: {
       title: cleanTitle,
       body: cleanBody,
-      isPinned: Boolean(isPinned),
+      isPinned,
       expiresAt: cleanExpiresAt,
       authorId: req.user.id
     }
@@ -2206,25 +2337,27 @@ app.patch('/announcements/:id', requireAuth, requireModule('announcements'), req
   const announcement = await prisma.announcement.findUnique({ where: { id: req.params.id } });
 
   if (!announcement) {
-    return res.status(404).json({ message: 'Announcement not found.' });
+    return sendError(res, 404, 'Announcement not found.');
   }
 
   const data = {};
-  if (typeof req.body.title === 'string' && req.body.title.trim()) {
-    data.title = req.body.title.trim();
+  if (typeof req.body.title === 'string') {
+    const title = optionalString(req.body, 'title', 'Title', 160).trim();
+    if (title) {
+      data.title = title;
+    }
   }
-  if (typeof req.body.body === 'string' && req.body.body.trim()) {
-    data.body = req.body.body.trim();
+  if (typeof req.body.body === 'string') {
+    const body = optionalString(req.body, 'body', 'Message', 2000).trim();
+    if (body) {
+      data.body = body;
+    }
   }
-  if (typeof req.body.isPinned === 'boolean') {
-    data.isPinned = req.body.isPinned;
+  if (Object.hasOwn(req.body, 'isPinned')) {
+    data.isPinned = booleanValue(req.body, 'isPinned', 'Pinned');
   }
   if (Object.hasOwn(req.body, 'expiresAt')) {
-    const expiresAt = optionalDate(req.body.expiresAt);
-    if (expiresAt === undefined) {
-      return res.status(400).json({ message: 'Announcement expiry date is invalid.' });
-    }
-    data.expiresAt = expiresAt;
+    data.expiresAt = optionalDateValue(req.body, 'expiresAt', 'Announcement expiry date');
   }
 
   const updated = await prisma.announcement.update({ where: { id: announcement.id }, data });
@@ -2236,7 +2369,7 @@ app.delete('/announcements/:id', requireAuth, requireModule('announcements'), re
   const announcement = await prisma.announcement.findUnique({ where: { id: req.params.id } });
 
   if (!announcement) {
-    return res.status(404).json({ message: 'Announcement not found.' });
+    return sendError(res, 404, 'Announcement not found.');
   }
 
   await prisma.announcement.delete({ where: { id: announcement.id } });
@@ -2245,22 +2378,10 @@ app.delete('/announcements/:id', requireAuth, requireModule('announcements'), re
 });
 
 app.post('/users', requireAuth, requireAdmin, async (req, res) => {
-  const { username, password, displayName, role = 'FAMILY' } = req.body;
-  const cleanUsername = String(username || '').trim();
-  const cleanDisplayName = String(displayName || '').trim();
-  const cleanRole = String(role || 'FAMILY').toUpperCase();
-
-  if (!cleanUsername || !password || !cleanDisplayName) {
-    return res.status(400).json({ message: 'Username, password, and display name are required.' });
-  }
-
-  if (String(password).length < 8) {
-    return res.status(400).json({ message: 'Temporary password must be at least 8 characters.' });
-  }
-
-  if (!roleNames.includes(cleanRole)) {
-    return res.status(400).json({ message: `Role must be one of: ${roleNames.join(', ')}.` });
-  }
+  const cleanUsername = usernameValue(req.body);
+  const cleanDisplayName = requiredString(req.body, 'displayName', 'Display name', 120);
+  const password = passwordValue(req.body, 'password', 'Temporary password');
+  const cleanRole = enumValue(req.body.role, roleNames, 'Role', 'FAMILY');
 
   const passwordHash = await bcrypt.hash(password, 12);
 
@@ -2283,7 +2404,7 @@ app.post('/users', requireAuth, requireAdmin, async (req, res) => {
     res.status(201).json(publicUser(user));
   } catch (err) {
     if (err.code === 'P2002') {
-      return res.status(409).json({ message: 'Username is already taken.' });
+      return sendError(res, 409, 'Username is already taken.');
     }
 
     throw err;
@@ -2294,32 +2415,32 @@ app.patch('/users/:id', requireAuth, requireAdmin, async (req, res) => {
   const target = await prisma.user.findUnique({ where: { id: req.params.id } });
 
   if (!target) {
-    return res.status(404).json({ message: 'User not found.' });
+    return sendError(res, 404, 'User not found.');
   }
 
   const data = {};
-  if (typeof req.body.displayName === 'string' && req.body.displayName.trim()) {
-    data.displayName = req.body.displayName.trim();
+  if (typeof req.body.displayName === 'string') {
+    const displayName = optionalString(req.body, 'displayName', 'Display name', 120).trim();
+    if (displayName) {
+      data.displayName = displayName;
+    }
   }
-  if (typeof req.body.username === 'string' && req.body.username.trim()) {
-    data.username = req.body.username.trim();
+  if (typeof req.body.username === 'string') {
+    data.username = usernameValue(req.body);
   }
   if (typeof req.body.role === 'string') {
-    const role = req.body.role.toUpperCase();
-    if (!roleNames.includes(role)) {
-      return res.status(400).json({ message: `Role must be one of: ${roleNames.join(', ')}.` });
-    }
+    const role = enumValue(req.body.role, roleNames, 'Role');
     if (target.id === req.user.id && role !== 'ADMIN') {
-      return res.status(400).json({ message: 'You cannot remove your own admin role.' });
+      return sendError(res, 400, 'You cannot remove your own admin role.');
     }
     if (await wouldRemoveLastAdmin(target, role)) {
-      return res.status(400).json({ message: 'At least one admin account is required.' });
+      return sendError(res, 400, 'At least one admin account is required.');
     }
     data.role = role;
   }
 
   if (!Object.keys(data).length) {
-    return res.status(400).json({ message: 'Nothing to update.' });
+    return sendError(res, 400, 'Nothing to update.');
   }
 
   try {
@@ -2333,7 +2454,7 @@ app.patch('/users/:id', requireAuth, requireAdmin, async (req, res) => {
     res.json(publicUser(updated));
   } catch (err) {
     if (err.code === 'P2002') {
-      return res.status(409).json({ message: 'Username is already taken.' });
+      return sendError(res, 409, 'Username is already taken.');
     }
 
     throw err;
@@ -2341,16 +2462,12 @@ app.patch('/users/:id', requireAuth, requireAdmin, async (req, res) => {
 });
 
 app.post('/users/:id/password', requireAuth, requireAdmin, async (req, res) => {
-  const { password } = req.body;
-
-  if (!password || String(password).length < 8) {
-    return res.status(400).json({ message: 'Temporary password must be at least 8 characters.' });
-  }
+  const password = passwordValue(req.body, 'password', 'Temporary password');
 
   const target = await prisma.user.findUnique({ where: { id: req.params.id } });
 
   if (!target) {
-    return res.status(404).json({ message: 'User not found.' });
+    return sendError(res, 404, 'User not found.');
   }
 
   const passwordHash = await bcrypt.hash(password, 12);
@@ -2367,12 +2484,12 @@ app.patch('/users/:id/permissions', requireAuth, requireAdmin, async (req, res) 
   const target = await prisma.user.findUnique({ where: { id: req.params.id } });
 
   if (!target) {
-    return res.status(404).json({ message: 'User not found.' });
+    return sendError(res, 404, 'User not found.');
   }
 
   const data = permissionData(req.body);
   if (!Object.keys(data).length) {
-    return res.status(400).json({ message: 'At least one permission value is required.' });
+    return sendError(res, 400, 'At least one permission value is required.');
   }
 
   const updated = await prisma.user.update({ where: { id: target.id }, data });
@@ -2399,19 +2516,15 @@ app.get('/tags', requireAuth, requireModule('tags'), async (req, res) => {
 });
 
 app.post('/tags', requireAuth, requireModule('tags'), requireCapability('canCreateTags'), async (req, res) => {
-  const name = String(req.body.name || '').trim();
-  const color = String(req.body.color || '#7c3aed').trim() || '#7c3aed';
-
-  if (!name) {
-    return res.status(400).json({ message: 'Tag name is required.' });
-  }
+  const name = requiredString(req.body, 'name', 'Tag name', 60);
+  const color = optionalString(req.body, 'color', 'Tag color', 24, '#7c3aed').trim() || '#7c3aed';
 
   try {
     const tag = await prisma.tag.create({
       data: {
         name,
         color,
-        isShared: Boolean(req.body.isShared),
+        isShared: booleanValue(req.body, 'isShared', 'Shared tag', false),
         ownerId: req.user.id
       }
     });
@@ -2419,7 +2532,7 @@ app.post('/tags', requireAuth, requireModule('tags'), requireCapability('canCrea
     res.status(201).json(serializeTag(tag, req.user));
   } catch (err) {
     if (err.code === 'P2002') {
-      return res.status(409).json({ message: 'A tag with that name already exists.' });
+      return sendError(res, 409, 'A tag with that name already exists.');
     }
 
     throw err;
@@ -2432,18 +2545,21 @@ app.patch('/tags/:id', requireAuth, requireModule('tags'), async (req, res) => {
   });
 
   if (!tag) {
-    return res.status(404).json({ message: 'Tag not found.' });
+    return sendError(res, 404, 'Tag not found.');
   }
 
   const data = {};
-  if (typeof req.body.name === 'string' && req.body.name.trim()) {
-    data.name = req.body.name.trim();
+  if (typeof req.body.name === 'string') {
+    const name = optionalString(req.body, 'name', 'Tag name', 60).trim();
+    if (name) {
+      data.name = name;
+    }
   }
-  if (typeof req.body.color === 'string' && req.body.color.trim()) {
-    data.color = req.body.color.trim();
+  if (typeof req.body.color === 'string') {
+    data.color = optionalString(req.body, 'color', 'Tag color', 24).trim();
   }
-  if (typeof req.body.isShared === 'boolean') {
-    data.isShared = req.body.isShared;
+  if (Object.hasOwn(req.body, 'isShared')) {
+    data.isShared = booleanValue(req.body, 'isShared', 'Shared tag');
   }
 
   try {
@@ -2452,7 +2568,7 @@ app.patch('/tags/:id', requireAuth, requireModule('tags'), async (req, res) => {
     res.json(serializeTag(updated, req.user));
   } catch (err) {
     if (err.code === 'P2002') {
-      return res.status(409).json({ message: 'A tag with that name already exists.' });
+      return sendError(res, 409, 'A tag with that name already exists.');
     }
 
     throw err;
@@ -2465,7 +2581,7 @@ app.delete('/tags/:id', requireAuth, requireModule('tags'), async (req, res) => 
   });
 
   if (!tag) {
-    return res.status(404).json({ message: 'Tag not found.' });
+    return sendError(res, 404, 'Tag not found.');
   }
 
   await prisma.tag.delete({ where: { id: tag.id } });
@@ -2488,19 +2604,19 @@ app.get('/bookmarks', requireAuth, requireModule('bookmarks'), async (req, res) 
 });
 
 app.post('/bookmarks', requireAuth, requireModule('bookmarks'), requireCapability('canCreateBookmarks'), async (req, res) => {
-  const title = String(req.body.title || '').trim();
+  const title = requiredString(req.body, 'title', 'Title', 160);
   const url = cleanUrl(req.body.url);
 
-  if (!title || !url) {
-    return res.status(400).json({ message: 'Title and URL are required.' });
+  if (!url) {
+    return sendError(res, 400, 'URL is required.');
   }
 
   const bookmark = await prisma.bookmark.create({
     data: {
       title,
       url,
-      notes: String(req.body.notes || ''),
-      isShared: Boolean(req.body.isShared),
+      notes: optionalString(req.body, 'notes', 'Notes', 2000),
+      isShared: booleanValue(req.body, 'isShared', 'Shared bookmark', false),
       ownerId: req.user.id,
       tags: await editableTagConnections(req.body.tagIds, req.user, 'connect')
     }
@@ -2515,25 +2631,28 @@ app.patch('/bookmarks/:id', requireAuth, requireModule('bookmarks'), async (req,
   });
 
   if (!bookmark) {
-    return res.status(404).json({ message: 'Bookmark not found.' });
+    return sendError(res, 404, 'Bookmark not found.');
   }
 
   const data = {};
-  if (typeof req.body.title === 'string' && req.body.title.trim()) {
-    data.title = req.body.title.trim();
+  if (typeof req.body.title === 'string') {
+    const title = optionalString(req.body, 'title', 'Title', 160).trim();
+    if (title) {
+      data.title = title;
+    }
   }
   if (Object.hasOwn(req.body, 'url')) {
     const url = cleanUrl(req.body.url);
     if (!url) {
-      return res.status(400).json({ message: 'URL is required.' });
+      return sendError(res, 400, 'URL is required.');
     }
     data.url = url;
   }
   if (typeof req.body.notes === 'string') {
-    data.notes = req.body.notes;
+    data.notes = optionalString(req.body, 'notes', 'Notes', 2000);
   }
-  if (typeof req.body.isShared === 'boolean') {
-    data.isShared = req.body.isShared;
+  if (Object.hasOwn(req.body, 'isShared')) {
+    data.isShared = booleanValue(req.body, 'isShared', 'Shared bookmark');
   }
   const tags = await editableTagConnections(req.body.tagIds, req.user);
   if (tags) {
@@ -2551,7 +2670,7 @@ app.delete('/bookmarks/:id', requireAuth, requireModule('bookmarks'), async (req
   });
 
   if (!bookmark) {
-    return res.status(404).json({ message: 'Bookmark not found.' });
+    return sendError(res, 404, 'Bookmark not found.');
   }
 
   await prisma.bookmark.delete({ where: { id: bookmark.id } });
@@ -2560,7 +2679,7 @@ app.delete('/bookmarks/:id', requireAuth, requireModule('bookmarks'), async (req
 });
 
 app.get('/search', requireAuth, requireModule('search'), async (req, res) => {
-  const query = String(req.query.q || '').trim();
+  const query = searchQueryValue(req.query.q);
   const pagination = paginationParams(req.query, { limit: 12, maxLimit: 50 });
   const viewer = await prisma.user.findUnique({
     where: { id: req.user.id },
@@ -2799,6 +2918,10 @@ async function sharedLocalAdapterFiles(user) {
 }
 
 function sendAdapterError(res, error, req = null) {
+  if (error instanceof ValidationError) {
+    return sendError(res, error.status, error.message, error.code);
+  }
+
   const response = adapterErrorResponse(error);
   const status = response.code === adapterErrorCodes.NOT_FOUND ? 404
     : response.code === adapterErrorCodes.CONFLICT ? 409
@@ -2818,14 +2941,16 @@ function sendAdapterError(res, error, req = null) {
     });
   }
 
-  return res.status(status).json(response);
+  return sendError(res, status, response.message, response.code);
 }
 
 app.get('/file-portal/local', requireAuth, requireModule('storage'), async (req, res) => {
   try {
     const pagination = paginationParams(req.query, { limit: 80, maxLimit: 200 });
+    const currentPath = adapterPathValue(req.query.path, 'Folder path');
+    const query = searchQueryValue(req.query.q);
     const [listing, health] = await Promise.all([
-      localStorageAdapter.list(req.query.path, req.query.q),
+      localStorageAdapter.list(currentPath, query),
       localStorageAdapter.health()
     ]);
     const [allFolders, allFiles] = await Promise.all([
@@ -2860,7 +2985,9 @@ app.get('/file-portal/local', requireAuth, requireModule('storage'), async (req,
 
 app.post('/file-portal/local/folders', requireAuth, requireModule('storage'), async (req, res) => {
   try {
-    const folder = await localStorageAdapter.createFolder(req.body.path, req.body.name);
+    const folderPath = adapterPathValue(req.body.path, 'Folder path');
+    const name = requiredString(req.body, 'name', 'Folder name', 160);
+    const folder = await localStorageAdapter.createFolder(folderPath, name);
     await logActivity('file_portal.folder_created', req.user.id, { name: folder.name }, 'PRIVATE');
     res.status(201).json(folder);
   } catch (err) {
@@ -2871,13 +2998,19 @@ app.post('/file-portal/local/folders', requireAuth, requireModule('storage'), as
 app.post('/file-portal/local/files', requireAuth, requireModule('storage'), uploadRateLimiter, handlePortalFileUpload, async (req, res) => {
   try {
     validateUploadedFile(req.file);
-    const file = await localStorageAdapter.upload(req.body.path, req.file);
-    await upsertAdapterFileMetadata({
-      adapterKey: localStorageAdapter.key,
-      item: file,
-      user: req.user,
-      data: {}
-    });
+    const uploadPath = adapterPathValue(req.body.path, 'Upload path');
+    const file = await localStorageAdapter.upload(uploadPath, req.file);
+    try {
+      await upsertAdapterFileMetadata({
+        adapterKey: localStorageAdapter.key,
+        item: file,
+        user: req.user,
+        data: {}
+      });
+    } catch (err) {
+      await localStorageAdapter.delete(file.path).catch(() => undefined);
+      throw err;
+    }
     await logActivity('file_portal.file_uploaded', req.user.id, { name: file.name }, 'PRIVATE');
     const [enrichedFile] = await enrichAdapterItems([file], req.user, localStorageAdapter.key);
     res.status(201).json(enrichedFile);
@@ -2888,13 +3021,17 @@ app.post('/file-portal/local/files', requireAuth, requireModule('storage'), uplo
 
 app.patch('/file-portal/local/metadata', requireAuth, requireModule('storage'), async (req, res) => {
   try {
-    const { item } = await requireLocalFileOwner(req.body.path, req.user);
+    const { item } = await requireLocalFileOwner(adapterPathValue(req.body.path, 'File path', { required: true }), req.user);
 
     const metadata = await upsertAdapterFileMetadata({
       adapterKey: localStorageAdapter.key,
       item,
       user: req.user,
-      data: req.body
+      data: {
+        isImportant: optionalBoolean(req.body, 'isImportant', 'Important file'),
+        isShared: optionalBoolean(req.body, 'isShared', 'Shared file'),
+        tagIds: req.body.tagIds
+      }
     });
 
     await logActivity('file_portal.metadata_updated', req.user.id, {
@@ -2910,8 +3047,14 @@ app.patch('/file-portal/local/metadata', requireAuth, requireModule('storage'), 
 
 app.patch('/file-portal/local/share-users', requireAuth, requireModule('storage'), async (req, res) => {
   try {
-    const { item, metadata } = await ensureOwnedAdapterMetadata(req.body.path, req.user);
-    const userIds = Array.isArray(req.body.userIds) ? [...new Set(req.body.userIds.map(String))] : [];
+    const { item, metadata } = await ensureOwnedAdapterMetadata(adapterPathValue(req.body.path, 'File path', { required: true }), req.user);
+    if (!Array.isArray(req.body.userIds)) {
+      throw new ValidationError('Shared user IDs must be an array.');
+    }
+    if (req.body.userIds.length > 100) {
+      throw new ValidationError('Shared user IDs must include 100 items or fewer.');
+    }
+    const userIds = [...new Set(req.body.userIds.map((id) => boundedString(id, 'Shared user ID', 120)))];
     const recipients = await prisma.user.findMany({
       where: {
         AND: [
@@ -2957,15 +3100,18 @@ app.patch('/file-portal/local/share-users', requireAuth, requireModule('storage'
 
 app.post('/file-portal/local/public-links', requireAuth, requireModule('storage'), async (req, res) => {
   try {
-    const { item, metadata } = await ensureOwnedAdapterMetadata(req.body.path, req.user);
+    const { item, metadata } = await ensureOwnedAdapterMetadata(adapterPathValue(req.body.path, 'File path', { required: true }), req.user);
     const rawToken = randomToken(32);
     const days = Number(req.body.expiresInDays || publicShareTtlDays);
+    if (!Number.isFinite(days) || days <= 0 || days > 30) {
+      throw new ValidationError('Public link expiry must be between 1 and 30 days.');
+    }
     const expiresAt = daysFromNow(Number.isFinite(days) && days > 0 ? Math.min(days, 30) : publicShareTtlDays);
     const link = await prisma.publicFileShareLink.create({
       data: {
         metadataId: metadata.id,
         tokenHash: tokenHash(rawToken),
-        label: String(req.body.label || '').trim().slice(0, 80),
+        label: optionalString(req.body, 'label', 'Public link label', 80).trim(),
         expiresAt
       }
     });
@@ -3003,12 +3149,12 @@ app.delete('/file-portal/local/public-links/:id', requireAuth, requireModule('st
     });
 
     if (!link && req.user.role !== 'ADMIN') {
-      return res.status(404).json({ message: 'Public link not found.' });
+      return sendError(res, 404, 'Public link not found.');
     }
 
     const target = link || await prisma.publicFileShareLink.findUnique({ where: { id: req.params.id } });
     if (!target) {
-      return res.status(404).json({ message: 'Public link not found.' });
+      return sendError(res, 404, 'Public link not found.');
     }
 
     await prisma.publicFileShareLink.update({
@@ -3024,9 +3170,10 @@ app.delete('/file-portal/local/public-links/:id', requireAuth, requireModule('st
 
 app.get('/public/file/:token', async (req, res) => {
   try {
+    const token = boundedString(req.params.token, 'Public file token', 200);
     const link = await prisma.publicFileShareLink.findFirst({
       where: {
-        tokenHash: tokenHash(req.params.token),
+        tokenHash: tokenHash(token),
         isRevoked: false,
         expiresAt: { gt: new Date() }
       },
@@ -3034,7 +3181,7 @@ app.get('/public/file/:token', async (req, res) => {
     });
 
     if (!link || link.metadata.adapterKey !== localStorageAdapter.key) {
-      return res.status(404).json({ message: 'Public link not found or expired.' });
+      return sendError(res, 404, 'Public link not found or expired.');
     }
 
     const file = await localStorageAdapter.download(link.metadata.path);
@@ -3042,6 +3189,11 @@ app.get('/public/file/:token', async (req, res) => {
       where: { id: link.id },
       data: { downloadCount: { increment: 1 } }
     });
+    await logActivity('file_portal.public_file_downloaded', link.metadata.ownerId, {
+      metadataId: link.metadata.id,
+      path: link.metadata.path,
+      linkId: link.id
+    }, 'PRIVATE');
     res.setHeader('Content-Length', file.size);
     res.download(localStorageAdapter.resolvePath(link.metadata.path), file.name);
   } catch (err) {
@@ -3082,13 +3234,19 @@ app.get('/file-portal/share-users', requireAuth, requireModule('storage'), async
 
 app.get('/file-portal/shared/download', requireAuth, requireModule('storage'), async (req, res) => {
   try {
-    const metadata = await canAccessSharedMetadata(String(req.query.id || ''), req.user);
+    const metadata = await canAccessSharedMetadata(requiredString(req.query, 'id', 'Shared file ID', 120), req.user);
 
     if (!metadata) {
       throw new AdapterError(adapterErrorCodes.NOT_FOUND, 'Shared file not found.');
     }
 
     const file = await localStorageAdapter.download(metadata.path);
+    await logActivity('file_portal.shared_file_downloaded', req.user.id, {
+      metadataId: metadata.id,
+      ownerId: metadata.ownerId,
+      path: metadata.path,
+      name: metadata.name
+    }, 'PRIVATE');
     res.setHeader('Content-Length', file.size);
     res.download(localStorageAdapter.resolvePath(metadata.path), file.name);
   } catch (err) {
@@ -3098,10 +3256,19 @@ app.get('/file-portal/shared/download', requireAuth, requireModule('storage'), a
 
 app.get('/file-portal/local/download', requireAuth, requireModule('storage'), async (req, res) => {
   try {
-    await requireLocalFileRead(req.query.path, req.user);
-    const file = await localStorageAdapter.download(req.query.path);
+    const filePath = adapterPathValue(req.query.path, 'File path', { required: true });
+    const { metadata } = await requireLocalFileRead(filePath, req.user);
+    const file = await localStorageAdapter.download(filePath);
+    if (metadata && metadata.ownerId !== req.user.id) {
+      await logActivity('file_portal.shared_file_downloaded', req.user.id, {
+        metadataId: metadata.id,
+        ownerId: metadata.ownerId,
+        path: metadata.path,
+        name: metadata.name
+      }, 'PRIVATE');
+    }
     res.setHeader('Content-Length', file.size);
-    res.download(localStorageAdapter.resolvePath(req.query.path), file.name);
+    res.download(localStorageAdapter.resolvePath(filePath), file.name);
   } catch (err) {
     return sendAdapterError(res, err, req);
   }
@@ -3109,7 +3276,7 @@ app.get('/file-portal/local/download', requireAuth, requireModule('storage'), as
 
 app.delete('/file-portal/local/items', requireAuth, requireModule('storage'), async (req, res) => {
   try {
-    const itemPath = req.query.path || req.body.path;
+    const itemPath = adapterPathValue(req.query.path || req.body.path, 'Item path', { required: true });
     const target = localStorageAdapter.resolvePath(itemPath);
     const item = await localStorageAdapter.itemFromPath(target);
     if (item.type === 'file') {
@@ -3138,7 +3305,7 @@ app.delete('/file-portal/local/items', requireAuth, requireModule('storage'), as
 });
 
 app.use(['/reminders', '/files', '/storage', '/folders', '/documents', '/document-records'], requireAuth, (_req, res) => {
-  res.status(410).json({ message: 'This legacy Equinox 1.x feature is disabled in Equinox 2.0.' });
+  sendError(res, 410, 'This legacy Equinox 1.x feature is disabled in Equinox 2.0.');
 });
 
 app.get('/notes', requireAuth, requireModule('notes'), async (req, res) => {
@@ -3155,18 +3322,15 @@ app.get('/notes', requireAuth, requireModule('notes'), async (req, res) => {
 });
 
 app.post('/notes', requireAuth, requireModule('notes'), requireCapability('canCreateNotes'), async (req, res) => {
-  const { title, body = '', isShared = false } = req.body;
-  const cleanTitle = String(title || '').trim();
-
-  if (!cleanTitle) {
-    return res.status(400).json({ message: 'Title is required.' });
-  }
+  const cleanTitle = requiredString(req.body, 'title', 'Title', 160);
+  const body = optionalString(req.body, 'body', 'Body', 10000);
+  const isShared = booleanValue(req.body, 'isShared', 'Shared note', false);
 
   const note = await prisma.note.create({
     data: {
       title: cleanTitle,
-      body: String(body || ''),
-      isShared: Boolean(isShared),
+      body,
+      isShared,
       ownerId: req.user.id,
       tags: await editableTagConnections(req.body.tagIds, req.user, 'connect')
     }
@@ -3181,18 +3345,21 @@ app.patch('/notes/:id', requireAuth, requireModule('notes'), async (req, res) =>
   });
 
   if (!note) {
-    return res.status(404).json({ message: 'Note not found.' });
+    return sendError(res, 404, 'Note not found.');
   }
 
   const data = {};
-  if (typeof req.body.title === 'string' && req.body.title.trim()) {
-    data.title = req.body.title.trim();
+  if (typeof req.body.title === 'string') {
+    const title = optionalString(req.body, 'title', 'Title', 160).trim();
+    if (title) {
+      data.title = title;
+    }
   }
   if (typeof req.body.body === 'string') {
-    data.body = req.body.body;
+    data.body = optionalString(req.body, 'body', 'Body', 10000);
   }
-  if (typeof req.body.isShared === 'boolean') {
-    data.isShared = req.body.isShared;
+  if (Object.hasOwn(req.body, 'isShared')) {
+    data.isShared = booleanValue(req.body, 'isShared', 'Shared note');
   }
   const tags = await editableTagConnections(req.body.tagIds, req.user);
   if (tags) {
@@ -3210,7 +3377,7 @@ app.delete('/notes/:id', requireAuth, requireModule('notes'), async (req, res) =
   });
 
   if (!note) {
-    return res.status(404).json({ message: 'Note not found.' });
+    return sendError(res, 404, 'Note not found.');
   }
 
   await prisma.note.delete({ where: { id: note.id } });
@@ -3235,7 +3402,7 @@ app.post('/reminders', requireAuth, requireCapability('canCreateReminders'), asy
   const { title, dueAt, isShared = false } = req.body;
 
   if (!title) {
-    return res.status(400).json({ message: 'Title is required.' });
+    return sendError(res, 400, 'Title is required.');
   }
 
   const reminder = await prisma.reminder.create({
@@ -3256,7 +3423,7 @@ app.patch('/reminders/:id', requireAuth, async (req, res) => {
   });
 
   if (!reminder) {
-    return res.status(404).json({ message: 'Reminder not found.' });
+    return sendError(res, 404, 'Reminder not found.');
   }
 
   const data = {};
@@ -3284,7 +3451,7 @@ app.delete('/reminders/:id', requireAuth, async (req, res) => {
   });
 
   if (!reminder) {
-    return res.status(404).json({ message: 'Reminder not found.' });
+    return sendError(res, 404, 'Reminder not found.');
   }
 
   await prisma.reminder.delete({ where: { id: reminder.id } });
@@ -3306,30 +3473,21 @@ app.get('/tasks', requireAuth, requireModule('tasks'), async (req, res) => {
 });
 
 app.post('/tasks', requireAuth, requireModule('tasks'), requireCapability('canCreateTasks'), async (req, res) => {
-  const { title, details = '', priority = 'NORMAL', status = 'OPEN', dueAt = null, isShared = false } = req.body;
-  const cleanTitle = String(title || '').trim();
-  const cleanPriority = String(priority || 'NORMAL').trim().toUpperCase();
-  const cleanStatus = String(status || 'OPEN').trim().toUpperCase();
-  const cleanDueAt = optionalDate(dueAt);
-
-  if (!cleanTitle) {
-    return res.status(400).json({ message: 'Title is required.' });
-  }
-  if (!taskPriorities.includes(cleanPriority) || !taskStatuses.includes(cleanStatus)) {
-    return res.status(400).json({ message: 'Task priority or status is invalid.' });
-  }
-  if (cleanDueAt === undefined) {
-    return res.status(400).json({ message: 'Task due date is invalid.' });
-  }
+  const cleanTitle = requiredString(req.body, 'title', 'Title', 160);
+  const details = optionalString(req.body, 'details', 'Details', 4000);
+  const cleanPriority = enumValue(req.body.priority, taskPriorities, 'Task priority', 'NORMAL');
+  const cleanStatus = enumValue(req.body.status, taskStatuses, 'Task status', 'OPEN');
+  const cleanDueAt = optionalDateValue(req.body, 'dueAt', 'Task due date') ?? null;
+  const isShared = booleanValue(req.body, 'isShared', 'Shared task', false);
 
   const task = await prisma.task.create({
     data: {
       title: cleanTitle,
-      details: String(details || ''),
+      details,
       priority: cleanPriority,
       status: cleanStatus,
       dueAt: cleanDueAt,
-      isShared: Boolean(isShared),
+      isShared,
       ownerId: req.user.id,
       tags: await editableTagConnections(req.body.tagIds, req.user, 'connect')
     }
@@ -3344,39 +3502,30 @@ app.patch('/tasks/:id', requireAuth, requireModule('tasks'), async (req, res) =>
   });
 
   if (!task) {
-    return res.status(404).json({ message: 'Task not found.' });
+    return sendError(res, 404, 'Task not found.');
   }
 
   const data = {};
-  if (typeof req.body.title === 'string' && req.body.title.trim()) {
-    data.title = req.body.title.trim();
+  if (typeof req.body.title === 'string') {
+    const title = optionalString(req.body, 'title', 'Title', 160).trim();
+    if (title) {
+      data.title = title;
+    }
   }
   if (typeof req.body.details === 'string') {
-    data.details = req.body.details;
+    data.details = optionalString(req.body, 'details', 'Details', 4000);
   }
   if (typeof req.body.priority === 'string') {
-    const priority = req.body.priority.trim().toUpperCase();
-    if (!taskPriorities.includes(priority)) {
-      return res.status(400).json({ message: 'Task priority is invalid.' });
-    }
-    data.priority = priority;
+    data.priority = enumValue(req.body.priority, taskPriorities, 'Task priority');
   }
   if (typeof req.body.status === 'string') {
-    const status = req.body.status.trim().toUpperCase();
-    if (!taskStatuses.includes(status)) {
-      return res.status(400).json({ message: 'Task status is invalid.' });
-    }
-    data.status = status;
+    data.status = enumValue(req.body.status, taskStatuses, 'Task status');
   }
   if (Object.hasOwn(req.body, 'dueAt')) {
-    const dueAt = optionalDate(req.body.dueAt);
-    if (dueAt === undefined) {
-      return res.status(400).json({ message: 'Task due date is invalid.' });
-    }
-    data.dueAt = dueAt;
+    data.dueAt = optionalDateValue(req.body, 'dueAt', 'Task due date');
   }
-  if (typeof req.body.isShared === 'boolean') {
-    data.isShared = req.body.isShared;
+  if (Object.hasOwn(req.body, 'isShared')) {
+    data.isShared = booleanValue(req.body, 'isShared', 'Shared task');
   }
   const tags = await editableTagConnections(req.body.tagIds, req.user);
   if (tags) {
@@ -3394,7 +3543,7 @@ app.delete('/tasks/:id', requireAuth, requireModule('tasks'), async (req, res) =
   });
 
   if (!task) {
-    return res.status(404).json({ message: 'Task not found.' });
+    return sendError(res, 404, 'Task not found.');
   }
 
   await prisma.task.delete({ where: { id: task.id } });
@@ -3425,7 +3574,7 @@ app.get('/storage', requireAuth, async (req, res) => {
   ]);
 
   if (folderId && !folder && !search) {
-    return res.status(404).json({ message: 'Folder not found.' });
+    return sendError(res, 404, 'Folder not found.');
   }
 
   const [folders, files, storageUsage, allFiles, allFolders] = await Promise.all([
@@ -3552,7 +3701,7 @@ app.post('/document-records', requireAuth, requireCapability('canCreateDocumentR
   const cleanTitle = String(title || '').trim();
 
   if (!cleanTitle) {
-    return res.status(400).json({ message: 'Title is required.' });
+    return sendError(res, 400, 'Title is required.');
   }
 
   if (fileId) {
@@ -3561,7 +3710,7 @@ app.post('/document-records', requireAuth, requireCapability('canCreateDocumentR
     });
 
     if (!file) {
-      return res.status(404).json({ message: 'Linked file not found.' });
+      return sendError(res, 404, 'Linked file not found.');
     }
   }
 
@@ -3588,7 +3737,7 @@ app.patch('/document-records/:id', requireAuth, async (req, res) => {
   });
 
   if (!record) {
-    return res.status(404).json({ message: 'Document tracker item not found.' });
+    return sendError(res, 404, 'Document tracker item not found.');
   }
 
   const data = {};
@@ -3617,7 +3766,7 @@ app.patch('/document-records/:id', requireAuth, async (req, res) => {
       });
 
       if (!file) {
-        return res.status(404).json({ message: 'Linked file not found.' });
+        return sendError(res, 404, 'Linked file not found.');
       }
     }
     data.fileId = req.body.fileId || null;
@@ -3634,7 +3783,7 @@ app.delete('/document-records/:id', requireAuth, async (req, res) => {
   });
 
   if (!record) {
-    return res.status(404).json({ message: 'Document tracker item not found.' });
+    return sendError(res, 404, 'Document tracker item not found.');
   }
 
   await prisma.documentRecord.delete({ where: { id: record.id } });
@@ -3647,11 +3796,11 @@ app.post('/folders', requireAuth, requireCapability('canCreateFolders'), async (
   const cleanName = String(name || '').trim();
 
   if (!cleanName) {
-    return res.status(400).json({ message: 'Folder name is required.' });
+    return sendError(res, 400, 'Folder name is required.');
   }
 
   if (parentId && !(await getEditableFolder(parentId, req.user))) {
-    return res.status(404).json({ message: 'Parent folder not found.' });
+    return sendError(res, 404, 'Parent folder not found.');
   }
 
   const folder = await prisma.folder.create({
@@ -3671,7 +3820,7 @@ app.patch('/folders/:id', requireAuth, async (req, res) => {
   const folder = await getEditableFolder(req.params.id, req.user);
 
   if (!folder) {
-    return res.status(404).json({ message: 'Folder not found.' });
+    return sendError(res, 404, 'Folder not found.');
   }
 
   const data = {};
@@ -3691,7 +3840,7 @@ app.delete('/folders/:id', requireAuth, async (req, res) => {
   const folder = await getEditableFolder(req.params.id, req.user);
 
   if (!folder) {
-    return res.status(404).json({ message: 'Folder not found.' });
+    return sendError(res, 404, 'Folder not found.');
   }
 
   const folderIds = await collectFolderIds(folder.id);
@@ -3722,21 +3871,27 @@ app.post('/files', requireAuth, requireCapability('canUploadFiles'), uploadRateL
 
   if (folderId && !(await getEditableFolder(folderId, req.user))) {
     await unlink(req.file.path).catch(() => undefined);
-    return res.status(404).json({ message: 'Folder not found.' });
+    return sendError(res, 404, 'Folder not found.');
   }
 
-  const asset = await prisma.fileAsset.create({
-    data: {
-      originalName: req.file.originalname,
-      storedName: req.file.filename,
-      mimeType: req.file.mimetype,
-      size: req.file.size,
-      path: req.file.path,
-      isShared: req.body.isShared === 'true',
-      folderId,
-      ownerId: req.user.id
-    }
-  });
+  let asset;
+  try {
+    asset = await prisma.fileAsset.create({
+      data: {
+        originalName: req.file.originalname,
+        storedName: req.file.filename,
+        mimeType: req.file.mimetype,
+        size: req.file.size,
+        path: req.file.path,
+        isShared: req.body.isShared === 'true',
+        folderId,
+        ownerId: req.user.id
+      }
+    });
+  } catch (err) {
+    await unlink(req.file.path).catch(() => undefined);
+    throw err;
+  }
   await logActivity('file.uploaded', req.user.id, { fileId: asset.id });
   res.status(201).json(asset);
 });
@@ -3747,7 +3902,7 @@ app.patch('/files/:id', requireAuth, async (req, res) => {
   });
 
   if (!file) {
-    return res.status(404).json({ message: 'File not found.' });
+    return sendError(res, 404, 'File not found.');
   }
 
   const data = {};
@@ -3762,7 +3917,7 @@ app.patch('/files/:id', requireAuth, async (req, res) => {
   }
   if (Object.hasOwn(req.body, 'folderId')) {
     if (req.body.folderId && !(await getEditableFolder(req.body.folderId, req.user))) {
-      return res.status(404).json({ message: 'Folder not found.' });
+      return sendError(res, 404, 'Folder not found.');
     }
     data.folderId = req.body.folderId || null;
   }
@@ -3782,12 +3937,12 @@ app.get('/files/:id/download', requireAuth, async (req, res) => {
   });
 
   if (!file) {
-    return res.status(404).json({ message: 'File not found.' });
+    return sendError(res, 404, 'File not found.');
   }
 
   const storedPath = await resolveStoredFilePath(file);
   if (!storedPath) {
-    return res.status(404).json({ message: 'Stored file is missing. Please upload it again.' });
+    return sendError(res, 404, 'Stored file is missing. Please upload it again.');
   }
 
   await logActivity('file.downloaded', req.user.id, { fileId: file.id });
@@ -3800,16 +3955,16 @@ app.get('/files/:id/preview', requireAuth, async (req, res) => {
   });
 
   if (!file) {
-    return res.status(404).json({ message: 'File not found.' });
+    return sendError(res, 404, 'File not found.');
   }
 
   if (!previewType(file)) {
-    return res.status(415).json({ message: 'Preview is not available for this file type.' });
+    return sendError(res, 415, 'Preview is not available for this file type.');
   }
 
   const storedPath = await resolveStoredFilePath(file);
   if (!storedPath) {
-    return res.status(404).json({ message: 'Stored file is missing. Please upload it again.' });
+    return sendError(res, 404, 'Stored file is missing. Please upload it again.');
   }
 
   await logActivity('file.previewed', req.user.id, { fileId: file.id });
@@ -3824,7 +3979,7 @@ app.delete('/files/:id', requireAuth, async (req, res) => {
   });
 
   if (!file) {
-    return res.status(404).json({ message: 'File not found.' });
+    return sendError(res, 404, 'File not found.');
   }
 
   await prisma.fileAsset.delete({ where: { id: file.id } });
@@ -3837,6 +3992,10 @@ app.delete('/files/:id', requireAuth, async (req, res) => {
 });
 
 app.use((err, req, res, _next) => {
+  if (err instanceof ValidationError) {
+    return sendError(res, err.status, err.message, err.code);
+  }
+
   logAuditEvent('error', 'api.error', {
     ...requestAuditMetadata(req),
     userId: req.user?.id || 'unknown',
@@ -3845,7 +4004,7 @@ app.use((err, req, res, _next) => {
     status: 500,
     error: err.message
   });
-  res.status(500).json({ message: 'Something went wrong.' });
+  sendError(res, 500, 'Something went wrong.');
 });
 
 await ensureRolePermissions();

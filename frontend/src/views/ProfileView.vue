@@ -12,6 +12,7 @@ import {
   profile,
   profileError,
   profileForm,
+  profileLoading,
   profileMessage,
   revokeSession,
   sessions,
@@ -48,6 +49,8 @@ onMounted(loadProfile);
     <template #actions>
       <button class="secondary-button" @click="loadProfile">Refresh</button>
     </template>
+
+    <p v-if="profileLoading" class="storage-info" role="status" aria-live="polite">Loading profile...</p>
 
     <section v-if="profile" class="profile-workspace">
       <aside class="storage-sidebar">
@@ -131,7 +134,8 @@ onMounted(loadProfile);
             </div>
             <button class="secondary-button" @click="logoutAllDevices">Logout all</button>
           </div>
-          <p v-if="!sessions.length" class="empty-state">No active sessions.</p>
+          <p v-if="profileLoading" class="storage-info" role="status" aria-live="polite">Loading sessions...</p>
+          <p v-else-if="!sessions.length" class="empty-state">No active sessions.</p>
           <article v-for="session in sessions" :key="session.id" class="session-row">
             <div>
               <strong>{{ session.isCurrent ? 'This device' : 'Signed-in device' }}</strong>

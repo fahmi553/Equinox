@@ -12,34 +12,51 @@ export const authStatus = ref({ hasOwner: true, setupRequired: false, roles: [] 
 export const authLoading = ref(false);
 export const sessionChecked = ref(false);
 export const dashboard = ref(null);
+export const dashboardLoading = ref(false);
 export const activity = ref([]);
+export const activityLoading = ref(false);
 export const modules = ref([]);
+export const modulesLoading = ref(false);
 export const settings = ref(null);
+export const settingsLoading = ref(false);
 export const adapterContracts = ref(null);
 export const localFiles = ref(null);
 export const localFilesLoading = ref(false);
 export const fileUploadLoading = ref(false);
 export const fileUploadStatus = ref('');
+export const fileUploadProgress = ref(0);
 export const sharedFiles = ref(null);
 export const sharedFilesLoading = ref(false);
 export const fileShareUsers = ref([]);
 export const latestPublicFileLink = ref(null);
 export const familyUsers = ref([]);
+export const familyUsersLoading = ref(false);
 export const rolePermissions = ref([]);
+export const rolePermissionsLoading = ref(false);
 export const announcements = ref([]);
+export const announcementsLoading = ref(false);
 export const chatMessages = ref([]);
+export const chatMessagesLoading = ref(false);
 export const chatUsers = ref([]);
+export const chatUsersLoading = ref(false);
 export const selectedChatUserId = ref('');
 export const notifications = ref([]);
+export const notificationsLoading = ref(false);
 export const unreadNotificationCount = ref(0);
 export const profile = ref(null);
+export const profileLoading = ref(false);
 export const sessions = ref([]);
 export const notes = ref([]);
+export const notesLoading = ref(false);
 export const tasks = ref([]);
+export const tasksLoading = ref(false);
 export const tags = ref([]);
+export const tagsLoading = ref(false);
 export const bookmarks = ref([]);
+export const bookmarksLoading = ref(false);
 export const globalSearchQuery = ref('');
 export const globalSearchResults = ref(null);
+export const globalSearchLoading = ref(false);
 export const newNote = ref({ title: '', body: '', isShared: false, tagIds: [] });
 export const newTask = ref({ title: '', details: '', priority: 'NORMAL', status: 'OPEN', dueAt: '', isShared: false, tagIds: [] });
 export const newTag = ref({ name: '', color: '#7c3aed', isShared: false });
@@ -273,8 +290,9 @@ export async function api(path, options = {}) {
 
   if (!response.ok) {
     const body = await response.json().catch(() => ({}));
-    const err = new Error(body.message || 'Request failed.');
+    const err = new Error(body.error?.message || body.message || 'Request failed.');
     err.status = response.status;
+    err.code = body.error?.code || '';
     throw err;
   }
 
@@ -283,6 +301,41 @@ export async function api(path, options = {}) {
   }
 
   return response.json();
+}
+
+function uploadApi(path, formData, onProgress) {
+  return new Promise((resolve, reject) => {
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', `${apiBase}${path}`);
+    if (token.value) {
+      xhr.setRequestHeader('Authorization', `Bearer ${token.value}`);
+    }
+    xhr.upload.onprogress = (event) => {
+      if (event.lengthComputable && typeof onProgress === 'function') {
+        onProgress(Math.round((event.loaded / event.total) * 100));
+      }
+    };
+    xhr.onload = () => {
+      let body = null;
+      try {
+        body = xhr.responseText ? JSON.parse(xhr.responseText) : null;
+      } catch {
+        body = null;
+      }
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve(body);
+        return;
+      }
+      const err = new Error(body?.error?.message || body?.message || 'Request failed.');
+      err.status = xhr.status;
+      err.code = body?.error?.code || '';
+      reject(err);
+    };
+    xhr.onerror = () => {
+      reject(new Error('Upload failed. Please check your connection and try again.'));
+    };
+    xhr.send(formData);
+  });
 }
 
 export async function loadAuthStatus() {
@@ -457,7 +510,12 @@ export function isModuleEnabled(key) {
 }
 
 export async function loadModules() {
-  modules.value = await api('/modules');
+  modulesLoading.value = true;
+  try {
+    modules.value = await api('/modules');
+  } finally {
+    modulesLoading.value = false;
+  }
 }
 
 export async function updateModuleSetting(module, isEnabled) {
@@ -479,11 +537,16 @@ export async function updateModuleSetting(module, isEnabled) {
 }
 
 export async function loadSettings() {
-  settings.value = await api('/settings');
-  if (isAdmin.value) {
-    adapterContracts.value = await api('/integrations/adapters');
-  } else {
-    adapterContracts.value = null;
+  settingsLoading.value = true;
+  try {
+    settings.value = await api('/settings');
+    if (isAdmin.value) {
+      adapterContracts.value = await api('/integrations/adapters');
+    } else {
+      adapterContracts.value = null;
+    }
+  } finally {
+    settingsLoading.value = false;
   }
 }
 
@@ -556,6 +619,7 @@ export async function createLocalFolder(path, name) {
 export async function uploadLocalFile(path, file) {
   filePortalError.value = '';
   fileUploadStatus.value = '';
+  fileUploadProgress.value = 0;
   if (!file) {
     filePortalError.value = 'Choose a file first.';
     return false;
@@ -570,14 +634,19 @@ export async function uploadLocalFile(path, file) {
 
   try {
     fileUploadLoading.value = true;
-    fileUploadStatus.value = `Uploading ${file.name}...`;
-    await api('/file-portal/local/files', { method: 'POST', body: formData });
+    fileUploadStatus.value = `Uploading ${file.name}: 0%`;
+    await uploadApi('/file-portal/local/files', formData, (progress) => {
+      fileUploadProgress.value = progress;
+      fileUploadStatus.value = `Uploading ${file.name}: ${progress}%`;
+    });
     await loadLocalFiles(path);
+    fileUploadProgress.value = 100;
     fileUploadStatus.value = `${file.name} uploaded.`;
     return true;
   } catch (err) {
     filePortalError.value = err.message;
     fileUploadStatus.value = '';
+    fileUploadProgress.value = 0;
     return false;
   } finally {
     fileUploadLoading.value = false;
@@ -720,25 +789,40 @@ export async function updateIntegrationSetting(integration, data) {
 }
 
 export async function loadDashboard() {
-  dashboard.value = await api('/dashboard');
-  if (dashboard.value?.user) {
-    user.value = dashboard.value.user;
-    localStorage.setItem('equinox.user', JSON.stringify(dashboard.value.user));
+  dashboardLoading.value = true;
+  try {
+    dashboard.value = await api('/dashboard');
+    if (dashboard.value?.user) {
+      user.value = dashboard.value.user;
+      localStorage.setItem('equinox.user', JSON.stringify(dashboard.value.user));
+    }
+  } finally {
+    dashboardLoading.value = false;
   }
 }
 
 export async function loadActivity(page = defaultPage, limit = defaultActivityLimit) {
+  activityLoading.value = true;
   const params = new URLSearchParams({
     page: String(page),
     limit: String(limit)
   });
-  activity.value = await api(`/activity?${params}`);
+  try {
+    activity.value = await api(`/activity?${params}`);
+  } finally {
+    activityLoading.value = false;
+  }
 }
 
 export async function loadNotifications() {
-  const result = await api('/notifications');
-  notifications.value = result.notifications;
-  unreadNotificationCount.value = result.unreadCount;
+  notificationsLoading.value = true;
+  try {
+    const result = await api('/notifications');
+    notifications.value = result.notifications;
+    unreadNotificationCount.value = result.unreadCount;
+  } finally {
+    notificationsLoading.value = false;
+  }
 }
 
 export async function markNotificationRead(notification) {
@@ -753,16 +837,26 @@ export async function markAllNotificationsRead() {
 }
 
 export async function loadChatMessages(page = defaultPage, limit = defaultChatLimit) {
+  chatMessagesLoading.value = true;
   const params = new URLSearchParams({
     page: String(page),
     limit: String(limit)
   });
   if (selectedChatUserId.value) params.set('recipientId', selectedChatUserId.value);
-  await loadOptionalCollection(`/chat/messages?${params}`, chatMessages);
+  try {
+    await loadOptionalCollection(`/chat/messages?${params}`, chatMessages);
+  } finally {
+    chatMessagesLoading.value = false;
+  }
 }
 
 export async function loadChatUsers() {
-  await loadOptionalCollection('/chat/users', chatUsers);
+  chatUsersLoading.value = true;
+  try {
+    await loadOptionalCollection('/chat/users', chatUsers);
+  } finally {
+    chatUsersLoading.value = false;
+  }
 }
 
 export async function sendChatMessage() {
@@ -811,19 +905,39 @@ async function loadOptionalCollection(path, collection) {
 }
 
 export async function loadNotes() {
-  await loadOptionalCollection('/notes', notes);
+  notesLoading.value = true;
+  try {
+    await loadOptionalCollection('/notes', notes);
+  } finally {
+    notesLoading.value = false;
+  }
 }
 
 export async function loadTasks() {
-  await loadOptionalCollection('/tasks', tasks);
+  tasksLoading.value = true;
+  try {
+    await loadOptionalCollection('/tasks', tasks);
+  } finally {
+    tasksLoading.value = false;
+  }
 }
 
 export async function loadTags() {
-  await loadOptionalCollection('/tags', tags);
+  tagsLoading.value = true;
+  try {
+    await loadOptionalCollection('/tags', tags);
+  } finally {
+    tagsLoading.value = false;
+  }
 }
 
 export async function loadBookmarks() {
-  await loadOptionalCollection('/bookmarks', bookmarks);
+  bookmarksLoading.value = true;
+  try {
+    await loadOptionalCollection('/bookmarks', bookmarks);
+  } finally {
+    bookmarksLoading.value = false;
+  }
 }
 
 export async function searchEverything() {
@@ -835,6 +949,7 @@ export async function searchEverything() {
     return;
   }
 
+  globalSearchLoading.value = true;
   try {
     const params = new URLSearchParams({
       q: query,
@@ -844,20 +959,33 @@ export async function searchEverything() {
     globalSearchResults.value = await api(`/search?${params}`);
   } catch (err) {
     globalSearchError.value = err.message;
+  } finally {
+    globalSearchLoading.value = false;
   }
 }
 
 export async function loadFamilyUsers() {
   if (!isAdmin.value) return;
-  familyUsers.value = await api('/users');
+  familyUsersLoading.value = true;
+  try {
+    familyUsers.value = await api('/users');
+  } finally {
+    familyUsersLoading.value = false;
+  }
 }
 
 export async function loadRolePermissions() {
   if (!isAdmin.value) return;
-  rolePermissions.value = await api('/roles/permissions');
+  rolePermissionsLoading.value = true;
+  try {
+    rolePermissions.value = await api('/roles/permissions');
+  } finally {
+    rolePermissionsLoading.value = false;
+  }
 }
 
 export async function loadAnnouncements(includeExpired = false) {
+  announcementsLoading.value = true;
   try {
     announcements.value = await api(`/announcements${includeExpired ? '?includeExpired=true' : ''}`);
   } catch (err) {
@@ -867,19 +995,26 @@ export async function loadAnnouncements(includeExpired = false) {
     }
 
     throw err;
+  } finally {
+    announcementsLoading.value = false;
   }
 }
 
 export async function loadProfile() {
-  profile.value = await api('/profile');
-  sessions.value = await api('/auth/sessions');
-  if (profile.value?.user) {
-    user.value = profile.value.user;
-    profileForm.value = {
-      displayName: profile.value.user.displayName,
-      username: profile.value.user.username
-    };
-    localStorage.setItem('equinox.user', JSON.stringify(profile.value.user));
+  profileLoading.value = true;
+  try {
+    profile.value = await api('/profile');
+    sessions.value = await api('/auth/sessions');
+    if (profile.value?.user) {
+      user.value = profile.value.user;
+      profileForm.value = {
+        displayName: profile.value.user.displayName,
+        username: profile.value.user.username
+      };
+      localStorage.setItem('equinox.user', JSON.stringify(profile.value.user));
+    }
+  } finally {
+    profileLoading.value = false;
   }
 }
 

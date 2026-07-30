@@ -7,6 +7,7 @@ import {
   markAllNotificationsRead,
   markNotificationRead,
   notifications,
+  notificationsLoading,
   unreadNotificationCount
 } from '../stores/equinox';
 
@@ -43,7 +44,8 @@ onMounted(loadNotifications);
         <h3>Your Notifications</h3>
         <p>New family chat messages and announcements appear here for your account.</p>
       </div>
-      <p v-if="!notifications.length" class="empty-state">No notifications yet.</p>
+      <p v-if="notificationsLoading" class="storage-info" role="status" aria-live="polite">Loading notifications...</p>
+      <p v-else-if="!notifications.length" class="empty-state">No notifications yet.</p>
       <RouterLink
         v-for="notification in notifications"
         :key="notification.id"

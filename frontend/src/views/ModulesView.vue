@@ -6,6 +6,7 @@ import {
   moduleError,
   moduleMessage,
   modules,
+  modulesLoading,
   updateModuleSetting
 } from '../stores/equinox';
 
@@ -52,6 +53,8 @@ onMounted(loadModules);
         <p>Core modules stay available. Optional productivity modules can be disabled without removing their data.</p>
       </div>
 
+      <p v-if="modulesLoading" class="storage-info" role="status" aria-live="polite">Loading modules...</p>
+      <p v-else-if="!groups.length" class="empty-state">No modules registered.</p>
       <section v-for="group in groups" :key="group.label" class="module-group">
         <h2>{{ group.label }}</h2>
         <article v-for="module in group.items" :key="module.key" class="module-row">

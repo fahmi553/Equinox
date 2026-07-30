@@ -6,6 +6,7 @@ import TagChips from '../components/TagChips.vue';
 import {
   bookmarkError,
   bookmarks,
+  bookmarksLoading,
   createBookmark,
   deleteBookmark,
   loadBookmarks,
@@ -14,6 +15,7 @@ import {
   permissions,
   saveBookmark,
   tags,
+  tagsLoading,
   toggleBookmarkShare
 } from '../stores/equinox';
 
@@ -147,7 +149,8 @@ onMounted(async () => {
               {{ tag.name }}
             </button>
           </div>
-          <p v-if="!visibleBookmarks.length" class="empty-state">No bookmarks here.</p>
+          <p v-if="bookmarksLoading || tagsLoading" class="storage-info" role="status" aria-live="polite">Loading bookmarks...</p>
+          <p v-else-if="!visibleBookmarks.length" class="empty-state">No bookmarks here.</p>
 
           <article v-for="bookmark in visibleBookmarks" :key="bookmark.id" class="note-card">
             <template v-if="editingBookmark?.id !== bookmark.id">

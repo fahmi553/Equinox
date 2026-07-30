@@ -12,8 +12,10 @@ import {
   permissions,
   saveTask,
   tags,
+  tagsLoading,
   taskError,
   tasks,
+  tasksLoading,
   toggleTaskDone,
   toggleTaskShare
 } from '../stores/equinox';
@@ -231,7 +233,8 @@ onMounted(async () => {
               {{ tag.name }}
             </button>
           </div>
-          <p v-if="!group.items.length" class="empty-state">No tasks here.</p>
+          <p v-if="tasksLoading || tagsLoading" class="storage-info" role="status" aria-live="polite">Loading tasks...</p>
+          <p v-else-if="!group.items.length" class="empty-state">No tasks here.</p>
 
           <article v-for="task in group.items" :key="task.id" class="reminder-card" :class="{ completed: task.status === 'DONE' }">
             <template v-if="editingTask?.id !== task.id">
