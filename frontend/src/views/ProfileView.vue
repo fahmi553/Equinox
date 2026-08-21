@@ -120,6 +120,7 @@ onMounted(loadProfile);
               <span>Confirm new password</span>
               <input v-model="passwordForm.confirmPassword" type="password" autocomplete="new-password" />
             </label>
+            <p class="storage-info">Use 12+ mixed characters, or a 16+ character passphrase with at least three words.</p>
             <button class="main-button" type="submit">Update password</button>
             <p v-if="passwordError" class="storage-error" role="alert" aria-live="assertive">{{ passwordError }}</p>
             <p v-if="passwordMessage" class="success-note" role="status" aria-live="polite">{{ passwordMessage }}</p>
@@ -138,9 +139,9 @@ onMounted(loadProfile);
           <p v-else-if="!sessions.length" class="empty-state">No active sessions.</p>
           <article v-for="session in sessions" :key="session.id" class="session-row">
             <div>
-              <strong>{{ session.isCurrent ? 'This device' : 'Signed-in device' }}</strong>
+              <strong>{{ session.isCurrent ? `This device: ${session.deviceLabel || 'Unknown device'}` : session.deviceLabel || 'Signed-in device' }}</strong>
               <span>{{ session.ipAddress }} / {{ session.rememberMe ? 'Remembered' : 'Standard' }}</span>
-              <small>{{ session.userAgent }}</small>
+              <small>{{ session.browser || 'Unknown browser' }} / {{ session.platform || 'Unknown platform' }}</small>
             </div>
             <div>
               <span>Expires {{ new Date(session.expiresAt).toLocaleString() }}</span>

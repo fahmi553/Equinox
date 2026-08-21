@@ -30,7 +30,9 @@ Keep these items in the pre-NAS roadmap:
 
 - [x] Password hashing
 - [x] Minimum password length requirement
-- [ ] Strong password rules
+- [x] Strong password rules
+- [x] Common-password blocklist
+- [x] Passphrase guidance in password forms
 - [x] Password reset tokens
 - [x] Password reset token expiry
 
@@ -41,6 +43,8 @@ Keep these items in the pre-NAS roadmap:
 - [x] Remember me support
 - [x] Active session list
 - [x] Revoke device/session
+- [x] Improved device/browser labels
+- [x] New-device login notification
 
 ### Authorization
 
@@ -101,6 +105,7 @@ Equinox Docker services
 - [x] `.env` is ignored by Git
 - [x] JWT secret is read from environment
 - [x] Backend warns when JWT secret is missing or weak
+- [x] `.env.example` documents database password configuration and rotation guidance
 - [ ] Rotate the local Docker database password before real family use
 - [ ] Add SMTP/NAS/OpenAI/OAuth secrets only when those integrations exist
 
@@ -150,6 +155,8 @@ Examples to block or quarantine before family use:
 ### Error Logs
 
 - [ ] Store stack traces server-side
+- [ ] Structured JSON logging
+- [ ] Request ID on every API response
 - [x] Avoid exposing most internal errors to users
 - [x] Standard error response format across all endpoints
 
@@ -184,6 +191,8 @@ The detailed stack trace should stay in logs.
 - [ ] Low storage warning
 - [ ] Backup failure warning
 - [ ] Failed upload warning
+- [ ] Adapter unavailable warning
+- [ ] Dashboard warning cards for storage, backups, uploads, and adapter state
 
 ## Phase 6 - Database And API Hardening
 
@@ -221,10 +230,13 @@ Avoid loading unbounded lists when a user may eventually have thousands of recor
 - [ ] Automated PostgreSQL backups
 - [ ] Backup retention policy
 - [ ] Backup verification
+- [ ] PostgreSQL backup script
+- [ ] Restore command documentation
 
 ### File Backup
 
 - [ ] Local adapter backup plan
+- [ ] Local file backup script
 - [ ] Important files backup
 - [ ] Offsite backup
 - [ ] Future NAS backup plan
@@ -278,6 +290,7 @@ This is a must before relying on Equinox for real household data.
 
 - [ ] TOTP support
 - [ ] Recovery codes
+- [ ] Admin-first 2FA requirement option
 
 ### Audit Logs
 
@@ -289,6 +302,15 @@ This is a must before relying on Equinox for real household data.
 - [x] Permission changes
 - [x] Login failures
 - [x] Download events for shared files
+- [ ] Admin audit log viewer
+- [ ] Audit filtering by user, event type, date, and severity
+
+### Sensitive Admin Actions
+
+- [ ] Strong confirmation for role changes
+- [ ] Strong confirmation for account deletion
+- [ ] Strong confirmation for module disabling
+- [ ] Strong confirmation for revoking all sessions
 
 ## Phase 11 - Before Family/Public Release
 
@@ -334,6 +356,7 @@ These are the items I would not skip before relying on Equinox for real family u
 - [ ] Real HTTPS certificate
 - [x] File upload validation
 - [ ] Structured logging
+- [ ] Request ID tracking
 - [ ] Database backup
 - [ ] File backup
 - [ ] Restore test
@@ -344,6 +367,6 @@ These are the items I would not skip before relying on Equinox for real family u
 
 1. Backup scripts for PostgreSQL and Local Storage.
 2. Dashboard warnings for low storage, backup failure, and failed uploads.
-3. HTTPS/reverse-proxy deployment notes for the final NAS environment.
-4. Expanded access-control regression tests.
-5. Standard error response format and structured logging.
+3. Request ID tracking and structured logging.
+4. HTTPS/reverse-proxy deployment notes for the final NAS environment.
+5. Expanded access-control regression tests.

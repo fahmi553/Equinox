@@ -1,9 +1,12 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import AppPage from '../components/AppPage.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import TagChips from '../components/TagChips.vue';
 import {
+  bulkDeleteNotes,
+  bulkUpdateNotes,
   createNote,
   deleteNote,
   loadNotes,
@@ -21,7 +24,11 @@ import {
 
 const editingNote = ref(null);
 const pendingDelete = ref(null);
+const pendingBulkDelete = ref(false);
 const activeTagId = ref('');
+const selectedNoteIds = ref([]);
+const titleInput = ref(null);
+const route = useRoute();
 
 const visibleNotes = computed(() => {
   if (!activeTagId.value) return notes.value;
@@ -29,6 +36,8 @@ const visibleNotes = computed(() => {
 });
 const ownNotes = computed(() => visibleNotes.value.filter((note) => note.canEdit));
 const sharedNotes = computed(() => visibleNotes.value.filter((note) => !note.canEdit));
+const editableVisibleNotes = computed(() => visibleNotes.value.filter((note) => note.canEdit));
+const selectedEditableNotes = computed(() => editableVisibleNotes.value.filter((note) => selectedNoteIds.value.includes(note.id)));
 
 function beginEdit(note) {
   editingNote.value = {
@@ -69,6 +78,40 @@ async function confirmDelete() {
   await deleteNote(note);
 }
 
+function toggleAllVisibleNotes() {
+  selectedNoteIds.value = selectedNoteIds.value.length === editableVisibleNotes.value.length
+    ? []
+    : editableVisibleNotes.value.map((note) => note.id);
+}
+
+async function bulkSetShare(isShared) {
+  if (!selectedEditableNotes.value.length) return;
+  if (await bulkUpdateNotes(selectedEditableNotes.value.map((note) => note.id), { isShared })) {
+    selectedNoteIds.value = [];
+  }
+}
+
+async function bulkApplyTag(tagId) {
+  if (!selectedEditableNotes.value.length || !tagId) return;
+  await Promise.all(selectedEditableNotes.value.map((note) => bulkUpdateNotes([note.id], {
+    tagIds: [...new Set([...(note.tags || []).map((tag) => tag.id), tagId])]
+  })));
+  selectedNoteIds.value = [];
+}
+
+function askBulkDelete() {
+  if (selectedEditableNotes.value.length) {
+    pendingBulkDelete.value = true;
+  }
+}
+
+async function confirmBulkDelete() {
+  const ids = selectedEditableNotes.value.map((note) => note.id);
+  pendingBulkDelete.value = false;
+  selectedNoteIds.value = [];
+  await bulkDeleteNotes(ids);
+}
+
 function noteVisibility(note) {
   if (!note.canEdit) return 'Read-only shared';
   return note.isShared ? 'Shared' : 'Private';
@@ -76,6 +119,10 @@ function noteVisibility(note) {
 
 onMounted(async () => {
   await Promise.all([loadNotes(), loadTags()]);
+  if (route.query.new === 'note') {
+    await nextTick();
+    titleInput.value?.focus();
+  }
 });
 </script>
 
@@ -114,7 +161,7 @@ onMounted(async () => {
           <form class="note-form" @submit.prevent="createNote">
             <label class="field-label">
               <span>Title</span>
-              <input v-model="newNote.title" />
+              <input ref="titleInput" v-model="newNote.title" />
             </label>
             <label class="field-label">
               <span>Note</span>
@@ -146,6 +193,23 @@ onMounted(async () => {
             <h4>Visible notes</h4>
             <span>{{ visibleNotes.length }}</span>
           </div>
+          <div v-if="editableVisibleNotes.length" class="bulk-toolbar">
+            <label class="share-row">
+              <input
+                type="checkbox"
+                :checked="selectedNoteIds.length === editableVisibleNotes.length"
+                @change="toggleAllVisibleNotes"
+              />
+              <span>{{ selectedNoteIds.length ? `${selectedNoteIds.length} selected` : 'Select visible' }}</span>
+            </label>
+            <button type="button" :disabled="!selectedNoteIds.length" @click="bulkSetShare(true)">Share</button>
+            <button type="button" :disabled="!selectedNoteIds.length" @click="bulkSetShare(false)">Make private</button>
+            <select :disabled="!selectedNoteIds.length" @change="bulkApplyTag($event.target.value); $event.target.value = ''">
+              <option value="">Add tag</option>
+              <option v-for="tag in tags" :key="tag.id" :value="tag.id">{{ tag.name }}</option>
+            </select>
+            <button type="button" :disabled="!selectedNoteIds.length" @click="askBulkDelete">Delete</button>
+          </div>
           <div v-if="tags.length" class="tag-filter-row">
             <button :class="{ active: !activeTagId }" @click="activeTagId = ''">All tags</button>
             <button
@@ -164,6 +228,10 @@ onMounted(async () => {
           <article v-for="note in visibleNotes" :key="note.id" class="note-card">
             <template v-if="editingNote?.id !== note.id">
               <div class="note-card-heading">
+                <label v-if="note.canEdit" class="bulk-select">
+                  <input v-model="selectedNoteIds" type="checkbox" :value="note.id" />
+                  <span>Select note</span>
+                </label>
                 <div>
                   <h4>{{ note.title }}</h4>
                   <p>{{ noteVisibility(note) }} / {{ note.owner.displayName }}</p>
@@ -220,6 +288,15 @@ onMounted(async () => {
       confirm-label="Delete"
       @cancel="cancelDelete"
       @confirm="confirmDelete"
+    />
+    <ConfirmDialog
+      :open="pendingBulkDelete"
+      eyebrow="Delete"
+      title="Delete selected notes?"
+      :message="`This will delete ${selectedEditableNotes.length} selected note${selectedEditableNotes.length === 1 ? '' : 's'} after the undo window.`"
+      confirm-label="Delete selected"
+      @cancel="pendingBulkDelete = false"
+      @confirm="confirmBulkDelete"
     />
   </AppPage>
 </template>

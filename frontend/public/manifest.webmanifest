@@ -1,0 +1,23 @@
+{
+  "name": "Equinox",
+  "short_name": "Equinox",
+  "description": "Private family ecosystem hub",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "background_color": "#050409",
+  "theme_color": "#050409",
+  "icons": [
+    {
+      "src": "/template-assets/images/equinox-logo.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/template-assets/images/equinox-logo.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

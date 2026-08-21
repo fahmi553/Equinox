@@ -1,9 +1,12 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import AppPage from '../components/AppPage.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
 import TagChips from '../components/TagChips.vue';
 import {
+  bulkDeleteTasks,
+  bulkUpdateTasks,
   createTask,
   deleteTask,
   loadTags,
@@ -22,7 +25,11 @@ import {
 
 const editingTask = ref(null);
 const pendingDelete = ref(null);
+const pendingBulkDelete = ref(false);
 const activeTagId = ref('');
+const selectedTaskIds = ref([]);
+const titleInput = ref(null);
+const route = useRoute();
 const priorityRank = { HIGH: 0, NORMAL: 1, LOW: 2 };
 
 function compareTasks(left, right) {
@@ -54,6 +61,8 @@ const visibleTasks = computed(() => {
 });
 const activeTasks = computed(() => visibleTasks.value.filter((task) => task.status !== 'DONE'));
 const sharedTasks = computed(() => visibleTasks.value.filter((task) => task.isShared));
+const editableVisibleTasks = computed(() => visibleTasks.value.filter((task) => task.canEdit));
+const selectedEditableTasks = computed(() => editableVisibleTasks.value.filter((task) => selectedTaskIds.value.includes(task.id)));
 const overdueTasks = computed(() => activeTasks.value.filter((task) => task.dueAt && new Date(task.dueAt) < todayStart.value).sort(compareTasks));
 const todayTasks = computed(() => activeTasks.value.filter((task) => {
   if (!task.dueAt) return false;
@@ -127,8 +136,53 @@ async function confirmDelete() {
   await deleteTask(task);
 }
 
+function toggleAllVisibleTasks() {
+  selectedTaskIds.value = selectedTaskIds.value.length === editableVisibleTasks.value.length
+    ? []
+    : editableVisibleTasks.value.map((task) => task.id);
+}
+
+async function bulkSetShare(isShared) {
+  if (!selectedEditableTasks.value.length) return;
+  if (await bulkUpdateTasks(selectedEditableTasks.value.map((task) => task.id), { isShared })) {
+    selectedTaskIds.value = [];
+  }
+}
+
+async function bulkSetStatus(status) {
+  if (!selectedEditableTasks.value.length) return;
+  if (await bulkUpdateTasks(selectedEditableTasks.value.map((task) => task.id), { status })) {
+    selectedTaskIds.value = [];
+  }
+}
+
+async function bulkApplyTag(tagId) {
+  if (!selectedEditableTasks.value.length || !tagId) return;
+  await Promise.all(selectedEditableTasks.value.map((task) => bulkUpdateTasks([task.id], {
+    tagIds: [...new Set([...(task.tags || []).map((tag) => tag.id), tagId])]
+  })));
+  selectedTaskIds.value = [];
+}
+
+function askBulkDelete() {
+  if (selectedEditableTasks.value.length) {
+    pendingBulkDelete.value = true;
+  }
+}
+
+async function confirmBulkDelete() {
+  const ids = selectedEditableTasks.value.map((task) => task.id);
+  pendingBulkDelete.value = false;
+  selectedTaskIds.value = [];
+  await bulkDeleteTasks(ids);
+}
+
 onMounted(async () => {
   await Promise.all([loadTasks(), loadTags()]);
+  if (route.query.new === 'task') {
+    await nextTick();
+    titleInput.value?.focus();
+  }
 });
 </script>
 
@@ -166,7 +220,7 @@ onMounted(async () => {
         <div class="form-stack">
           <label class="field-label">
             <span>Task title</span>
-            <input v-model="newTask.title" />
+            <input ref="titleInput" v-model="newTask.title" />
           </label>
           <label class="field-label">
             <span>Details</span>
@@ -216,6 +270,25 @@ onMounted(async () => {
       </section>
 
       <section class="reminder-board">
+        <section v-if="editableVisibleTasks.length" class="feature-panel bulk-toolbar wide">
+          <label class="share-row">
+            <input
+              type="checkbox"
+              :checked="selectedTaskIds.length === editableVisibleTasks.length"
+              @change="toggleAllVisibleTasks"
+            />
+            <span>{{ selectedTaskIds.length ? `${selectedTaskIds.length} selected` : 'Select visible tasks' }}</span>
+          </label>
+          <button type="button" :disabled="!selectedTaskIds.length" @click="bulkSetShare(true)">Share</button>
+          <button type="button" :disabled="!selectedTaskIds.length" @click="bulkSetShare(false)">Make private</button>
+          <button type="button" :disabled="!selectedTaskIds.length" @click="bulkSetStatus('DONE')">Mark done</button>
+          <button type="button" :disabled="!selectedTaskIds.length" @click="bulkSetStatus('OPEN')">Reopen</button>
+          <select :disabled="!selectedTaskIds.length" @change="bulkApplyTag($event.target.value); $event.target.value = ''">
+            <option value="">Add tag</option>
+            <option v-for="tag in tags" :key="tag.id" :value="tag.id">{{ tag.name }}</option>
+          </select>
+          <button type="button" :disabled="!selectedTaskIds.length" @click="askBulkDelete">Delete</button>
+        </section>
         <section v-for="group in taskGroups" :key="group.key" class="feature-panel reminder-column">
           <div class="storage-section-title">
             <h4>{{ group.label }}</h4>
@@ -238,6 +311,10 @@ onMounted(async () => {
 
           <article v-for="task in group.items" :key="task.id" class="reminder-card" :class="{ completed: task.status === 'DONE' }">
             <template v-if="editingTask?.id !== task.id">
+              <label v-if="task.canEdit" class="bulk-select">
+                <input v-model="selectedTaskIds" type="checkbox" :value="task.id" />
+                <span>Select task</span>
+              </label>
               <label class="reminder-check">
                 <input
                   :checked="task.status === 'DONE'"
@@ -320,6 +397,15 @@ onMounted(async () => {
       confirm-label="Delete"
       @cancel="cancelDelete"
       @confirm="confirmDelete"
+    />
+    <ConfirmDialog
+      :open="pendingBulkDelete"
+      eyebrow="Delete"
+      title="Delete selected tasks?"
+      :message="`This will delete ${selectedEditableTasks.length} selected task${selectedEditableTasks.length === 1 ? '' : 's'} after the undo window.`"
+      confirm-label="Delete selected"
+      @cancel="pendingBulkDelete = false"
+      @confirm="confirmBulkDelete"
     />
   </AppPage>
 </template>

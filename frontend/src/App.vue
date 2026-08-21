@@ -24,7 +24,8 @@ import {
   UsersRound,
   X
 } from '@lucide/vue';
-import { announcements, householdName, isAdmin, isAuthed, isLightTheme, isModuleEnabled, loadNotifications, logout, permissions, platformName, preferences, themeMode, toggleThemeMode, unreadNotificationCount, user } from './stores/equinox';
+import CommandPalette from './components/CommandPalette.vue';
+import { announcements, householdName, isAdmin, isAuthed, isLightTheme, isModuleEnabled, loadNotifications, logout, permissions, platformName, preferences, themeMode, toggleThemeMode, undoLastAction, undoNotice, unreadNotificationCount, user } from './stores/equinox';
 
 const route = useRoute();
 const router = useRouter();
@@ -73,22 +74,39 @@ const navGroups = computed(() => [
 ]);
 
 async function handleLogout() {
-  mobileNavOpen.value = false;
+  closeMobileNav();
   await logout();
   router.push('/login');
 }
 
-watch(() => route.fullPath, () => {
+function closeMobileNav() {
   mobileNavOpen.value = false;
+}
+
+function handleAppKeydown(event) {
+  if (event.key === 'Escape') closeMobileNav();
+}
+
+watch(() => route.fullPath, () => {
+  closeMobileNav();
+});
+
+watch(mobileNavOpen, (value) => {
+  document.body.style.overflow = value ? 'hidden' : '';
 });
 
 onMounted(() => {
+  window.addEventListener('keydown', handleAppKeydown);
   notificationTimer = window.setInterval(() => {
     if (isAuthed.value) loadNotifications();
   }, 20000);
 });
 
-onUnmounted(() => window.clearInterval(notificationTimer));
+onUnmounted(() => {
+  window.removeEventListener('keydown', handleAppKeydown);
+  document.body.style.overflow = '';
+  window.clearInterval(notificationTimer);
+});
 </script>
 
 <template>
@@ -108,6 +126,7 @@ onUnmounted(() => window.clearInterval(notificationTimer));
           <Bell :size="20" :stroke-width="2" />
           <span v-if="unreadNotificationCount">{{ unreadNotificationCount > 99 ? '99+' : unreadNotificationCount }}</span>
         </RouterLink>
+        <CommandPalette />
         <button
           class="theme-button"
           type="button"
@@ -180,7 +199,7 @@ onUnmounted(() => window.clearInterval(notificationTimer));
       v-if="showAppNav && mobileNavOpen"
       class="sidebar-backdrop"
       aria-label="Close menu"
-      @click="mobileNavOpen = false"
+      @click="closeMobileNav"
     ></button>
 
     <div :class="{ 'app-content': showAppNav }">
@@ -198,6 +217,11 @@ onUnmounted(() => window.clearInterval(notificationTimer));
         <strong>{{ platformName }}</strong>
         <span>{{ user?.displayName ? householdName : 'Private family hub, ready for Docker and NAS deployment.' }}</span>
       </footer>
+    </div>
+
+    <div v-if="undoNotice" class="undo-toast" role="status" aria-live="polite">
+      <span>{{ undoNotice.message }}</span>
+      <button type="button" @click="undoLastAction">Undo</button>
     </div>
   </main>
 </template>

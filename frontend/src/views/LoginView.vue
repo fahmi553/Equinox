@@ -96,6 +96,7 @@ onMounted(loadAuthStatus);
             <span>New password</span>
             <input v-model="resetForm.password" type="password" autocomplete="new-password" />
           </label>
+          <p class="storage-info">Use 12+ mixed characters, or a 16+ character passphrase with at least three words.</p>
         </template>
         <template v-else>
           <label v-if="isSetup" class="field-label">
@@ -114,6 +115,7 @@ onMounted(loadAuthStatus);
               :autocomplete="isSetup ? 'new-password' : 'current-password'"
             />
           </label>
+          <p v-if="isSetup" class="storage-info">Use 12+ mixed characters, or a 16+ character passphrase with at least three words.</p>
           <label class="share-row auth-remember-row">
             <input v-model="authForm.rememberMe" type="checkbox" />
             <span>Remember this device</span>

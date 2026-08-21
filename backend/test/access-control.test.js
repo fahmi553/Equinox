@@ -5,7 +5,7 @@ import request from 'supertest';
 import { app, prisma } from '../src/server.js';
 
 const runId = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
-const password = 'RegressionPass123';
+const password = 'RegressionPass123!';
 const users = {
   owner: {
     username: `owner-${runId}`,
@@ -116,7 +116,7 @@ test('api errors use the standard error envelope', async () => {
 test('validation errors use the standard error envelope', async () => {
   await request(app)
     .post('/auth/login')
-    .send({ username: '!', password: 'RegressionPass123' })
+    .send({ username: '!', password: 'RegressionPass123!' })
     .expect(400)
     .expect((response) => {
       assert.equal(response.body.error.code, 'VALIDATION_ERROR');

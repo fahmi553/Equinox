@@ -249,6 +249,7 @@ onMounted(async () => {
             <span>Temporary password</span>
             <input v-model="newFamilyUser.password" type="password" autocomplete="new-password" />
           </label>
+          <p class="storage-info">Use 12+ mixed characters, or a 16+ character passphrase with at least three words.</p>
           <label class="field-label">
             <span>Role</span>
             <select v-model="newFamilyUser.role">
@@ -309,6 +310,7 @@ onMounted(async () => {
                   <span>New temporary password</span>
                   <input v-model="passwordReset.password" type="password" autocomplete="new-password" />
                 </label>
+                <p class="storage-info">Use 12+ mixed characters, or a 16+ character passphrase with at least three words.</p>
                 <button type="submit">Save password</button>
                 <button type="button" @click="passwordReset = { userId: '', password: '' }">Cancel</button>
               </form>

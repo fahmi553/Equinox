@@ -39,6 +39,21 @@ const apiRateLimitMax = Number(process.env.API_RATE_LIMIT_MAX || 300);
 const authRateLimitMax = Number(process.env.AUTH_RATE_LIMIT_MAX || 5);
 const passwordResetRateLimitMax = Number(process.env.PASSWORD_RESET_RATE_LIMIT_MAX || 5);
 const uploadRateLimitMax = Number(process.env.UPLOAD_RATE_LIMIT_MAX || 30);
+const commonPasswords = new Set([
+  'password',
+  'password1',
+  'password123',
+  '12345678',
+  '123456789',
+  'qwerty123',
+  'admin1234',
+  'letmein123',
+  'welcome123',
+  'changeme',
+  'changeit',
+  'equinox123',
+  ...csvSetting(process.env.COMMON_PASSWORD_BLOCKLIST, [])
+]);
 const blockedUploadExtensions = csvSetting(process.env.BLOCKED_UPLOAD_EXTENSIONS, [
   'exe', 'bat', 'cmd', 'com', 'scr', 'msi', 'ps1', 'psm1', 'vbs', 'vbe', 'js', 'jse', 'mjs',
   'cjs', 'jar', 'php', 'sh', 'bash', 'zsh', 'fish', 'py', 'pl', 'rb', 'reg', 'hta', 'html',
@@ -376,7 +391,29 @@ function passwordValue(source, field, label, minLength = 8, maxLength = 256) {
   if (value.length > maxLength) {
     throw new ValidationError(`${label} must be ${maxLength} characters or fewer.`);
   }
+  if (minLength >= 8) {
+    validateStrongPassword(value, label);
+  }
   return value;
+}
+
+function validateStrongPassword(value, label) {
+  const lower = value.toLowerCase();
+  const normalized = lower.replace(/[^a-z0-9]/g, '');
+  const wordCount = value.trim().split(/\s+/).filter(Boolean).length;
+  const isPassphrase = value.length >= 16 && wordCount >= 3;
+  const hasUpper = /[A-Z]/.test(value);
+  const hasLower = /[a-z]/.test(value);
+  const hasNumber = /\d/.test(value);
+  const hasSymbol = /[^A-Za-z0-9\s]/.test(value);
+
+  if (commonPasswords.has(lower) || commonPasswords.has(normalized)) {
+    throw new ValidationError(`${label} is too common. Use a unique password or a longer passphrase.`);
+  }
+
+  if (!isPassphrase && (value.length < 12 || !hasUpper || !hasLower || !hasNumber || !hasSymbol)) {
+    throw new ValidationError(`${label} must be either a 16+ character passphrase with at least three words, or 12+ characters with uppercase, lowercase, a number, and a symbol.`);
+  }
 }
 
 function usernameValue(source, field = 'username') {
@@ -544,20 +581,63 @@ app.use(apiRateLimiter);
 async function createSession(user, req, rememberMe = false) {
   const tokenId = randomToken(16);
   const expiresAt = rememberMe ? daysFromNow(rememberSessionTtlDays) : new Date(Date.now() + sessionTtlHours * 60 * 60 * 1000);
+  const ipAddress = requestAuditMetadata(req).ipAddress;
+  const userAgent = String(req.headers['user-agent'] || 'unknown').slice(0, 180);
+  const knownSessions = await prisma.userSession.findMany({
+    where: { userId: user.id },
+    select: { ipAddress: true, userAgent: true },
+    take: 50,
+    orderBy: { createdAt: 'desc' }
+  });
+  const knownDevice = knownSessions.some((item) => item.ipAddress === ipAddress && item.userAgent === userAgent);
   const session = await prisma.userSession.create({
     data: {
       tokenId,
       userId: user.id,
       rememberMe,
       expiresAt,
-      ipAddress: req.ip || req.headers['x-forwarded-for'] || 'unknown',
-      userAgent: req.headers['user-agent'] || 'unknown'
+      ipAddress,
+      userAgent
     }
   });
+
+  if (knownSessions.length && !knownDevice) {
+    const device = deviceSummary(userAgent);
+    await createNotifications([user], {
+      type: 'SECURITY',
+      title: 'New device signed in',
+      body: `${device.label} signed in from ${ipAddress}.`,
+      link: '/profile',
+      sourceId: session.id
+    });
+    await logActivity('user.new_device_login', user.id, { sessionId: session.id, device: device.label, ipAddress }, 'PRIVATE');
+  }
 
   return {
     session,
     token: jwt.sign({ id: user.id, role: user.role, sid: session.id, jti: tokenId }, jwtSecret, { expiresIn: rememberMe ? `${rememberSessionTtlDays}d` : `${sessionTtlHours}h` })
+  };
+}
+
+function deviceSummary(userAgent) {
+  const agent = String(userAgent || 'unknown');
+  const browser = agent.includes('Edg/') ? 'Edge'
+    : agent.includes('OPR/') || agent.includes('Opera') ? 'Opera'
+      : agent.includes('Chrome/') ? 'Chrome'
+        : agent.includes('Firefox/') ? 'Firefox'
+          : agent.includes('Safari/') ? 'Safari'
+            : 'Unknown browser';
+  const platform = agent.includes('Windows') ? 'Windows'
+    : agent.includes('Mac OS X') ? 'macOS'
+      : agent.includes('Android') ? 'Android'
+        : agent.includes('iPhone') || agent.includes('iPad') ? 'iOS'
+          : agent.includes('Linux') ? 'Linux'
+            : 'Unknown device';
+
+  return {
+    browser,
+    platform,
+    label: `${browser} on ${platform}`
   };
 }
 
@@ -1657,10 +1737,14 @@ app.post('/auth/login', authRateLimiter, async (req, res) => {
 });
 
 function serializeSession(session) {
+  const device = deviceSummary(session.userAgent);
   return {
     id: session.id,
     ipAddress: session.ipAddress,
     userAgent: session.userAgent,
+    browser: device.browser,
+    platform: device.platform,
+    deviceLabel: device.label,
     rememberMe: session.rememberMe,
     createdAt: session.createdAt,
     lastSeenAt: session.lastSeenAt,

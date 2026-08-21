@@ -99,6 +99,8 @@ export const moduleError = ref('');
 export const moduleMessage = ref('');
 export const settingsError = ref('');
 export const settingsMessage = ref('');
+export const undoNotice = ref(null);
+let undoTimer = null;
 
 export const isAuthed = computed(() => Boolean(token.value));
 export const isAdmin = computed(() => user.value?.role === 'ADMIN');
@@ -148,6 +150,47 @@ export function toggleThemeMode() {
   localStorage.setItem('equinox.theme', themeMode.value);
 }
 
+function flushUndoAction() {
+  if (undoTimer) {
+    window.clearTimeout(undoTimer);
+    undoTimer = null;
+  }
+  if (undoNotice.value?.commit) {
+    void undoNotice.value.commit();
+  }
+  undoNotice.value = null;
+}
+
+export function undoLastAction() {
+  if (!undoNotice.value) return;
+  if (undoTimer) {
+    window.clearTimeout(undoTimer);
+    undoTimer = null;
+  }
+  undoNotice.value.undo();
+  undoNotice.value = null;
+}
+
+function scheduleCollectionDelete({ collection, ids, message, commit }) {
+  flushUndoAction();
+  const original = [...collection.value];
+  const idSet = new Set(ids);
+  collection.value = collection.value.filter((item) => !idSet.has(item.id));
+  undoNotice.value = {
+    message,
+    undo: () => {
+      collection.value = original;
+    },
+    commit
+  };
+  undoTimer = window.setTimeout(() => {
+    const action = undoNotice.value?.commit;
+    undoNotice.value = null;
+    undoTimer = null;
+    if (action) void action();
+  }, 6500);
+}
+
 export const metricCards = computed(() => [
   { moduleKey: 'notes', label: 'Notes', value: dashboard.value?.totals.notes ?? notes.value.length, icon: 'NotebookText' },
   { moduleKey: 'tasks', label: 'Tasks', value: dashboard.value?.totals.tasks ?? tasks.value.length, icon: 'ListChecks' },
@@ -163,6 +206,7 @@ const activityLabels = {
   'auth.password_reset_completed': 'Password reset completed',
   'user.login': 'Signed in',
   'user.login_failed': 'Sign-in failed',
+  'user.new_device_login': 'New device sign-in',
   'user.logout': 'Signed out',
   'user.logout_all': 'Signed out all devices',
   'user.session_revoked': 'Session revoked',
@@ -237,6 +281,9 @@ export function activityDetail(item) {
 
   if (item.action === 'user.login') {
     return `${actor} signed in from ${metadata.ipAddress || 'unknown IP'} using ${clientSummary(metadata.userAgent)}.`;
+  }
+  if (item.action === 'user.new_device_login') {
+    return `${actor} signed in from a new device${metadata.device ? `: ${metadata.device}` : ''}.`;
   }
   if (item.action === 'user.created') {
     return `${actor} created ${metadata.displayName || metadata.username || 'an account'} with the ${metadata.role || 'family'} role.`;
@@ -1078,8 +1125,8 @@ export async function changePassword() {
     return false;
   }
 
-  if (passwordForm.value.newPassword.length < 8) {
-    passwordError.value = 'New password must be at least 8 characters.';
+  if (passwordForm.value.newPassword.length < 12) {
+    passwordError.value = 'New password must use 12+ mixed characters, or a 16+ character passphrase with at least three words.';
     return false;
   }
 
@@ -1120,8 +1167,8 @@ export async function createFamilyUser() {
     return false;
   }
 
-  if (payload.password.length < 8) {
-    familyError.value = 'Temporary password must be at least 8 characters.';
+  if (payload.password.length < 12) {
+    familyError.value = 'Temporary password must use 12+ mixed characters, or a 16+ character passphrase with at least three words.';
     return false;
   }
 
@@ -1197,8 +1244,8 @@ export async function resetFamilyUserPassword(member, password) {
   familyError.value = '';
   familyMessage.value = '';
 
-  if (!password || password.length < 8) {
-    familyError.value = 'Temporary password must be at least 8 characters.';
+  if (!password || password.length < 12) {
+    familyError.value = 'Temporary password must use 12+ mixed characters, or a 16+ character passphrase with at least three words.';
     return false;
   }
 
@@ -1360,6 +1407,21 @@ export async function updateBookmark(bookmark, data) {
   }
 }
 
+export async function bulkUpdateBookmarks(bookmarkIds, data) {
+  bookmarkError.value = '';
+  try {
+    await Promise.all(bookmarkIds.map((id) => api(`/bookmarks/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    })));
+    await Promise.all([loadBookmarks(), loadDashboard(), loadProfile()]);
+    return true;
+  } catch (err) {
+    bookmarkError.value = err.message;
+    return false;
+  }
+}
+
 export async function saveBookmark(bookmark, source) {
   await updateBookmark(bookmark, bookmarkPayload(source));
 }
@@ -1370,13 +1432,38 @@ export async function toggleBookmarkShare(bookmark) {
 
 export async function deleteBookmark(bookmark) {
   bookmarkError.value = '';
+  scheduleCollectionDelete({
+    collection: bookmarks,
+    ids: [bookmark.id],
+    message: `Bookmark "${bookmark.title}" deleted.`,
+    commit: async () => {
+      try {
+        await api(`/bookmarks/${bookmark.id}`, { method: 'DELETE' });
+        await Promise.all([loadBookmarks(), loadDashboard(), loadProfile()]);
+      } catch (err) {
+        bookmarkError.value = err.message;
+        await loadBookmarks();
+      }
+    }
+  });
+}
 
-  try {
-    await api(`/bookmarks/${bookmark.id}`, { method: 'DELETE' });
-    await Promise.all([loadBookmarks(), loadDashboard(), loadProfile()]);
-  } catch (err) {
-    bookmarkError.value = err.message;
-  }
+export async function bulkDeleteBookmarks(bookmarkIds) {
+  bookmarkError.value = '';
+  scheduleCollectionDelete({
+    collection: bookmarks,
+    ids: bookmarkIds,
+    message: `${bookmarkIds.length} bookmark${bookmarkIds.length === 1 ? '' : 's'} deleted.`,
+    commit: async () => {
+      try {
+        await Promise.all(bookmarkIds.map((id) => api(`/bookmarks/${id}`, { method: 'DELETE' })));
+        await Promise.all([loadBookmarks(), loadDashboard(), loadProfile()]);
+      } catch (err) {
+        bookmarkError.value = err.message;
+        await loadBookmarks();
+      }
+    }
+  });
 }
 
 export async function createNote() {
@@ -1413,19 +1500,59 @@ export async function updateNote(note, data) {
   }
 }
 
+export async function bulkUpdateNotes(noteIds, data) {
+  noteError.value = '';
+  try {
+    await Promise.all(noteIds.map((id) => api(`/notes/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    })));
+    await Promise.all([loadNotes(), loadDashboard(), loadProfile()]);
+    return true;
+  } catch (err) {
+    noteError.value = err.message;
+    return false;
+  }
+}
+
 export async function toggleNoteShare(note) {
   await updateNote(note, { isShared: !note.isShared });
 }
 
 export async function deleteNote(note) {
   noteError.value = '';
+  scheduleCollectionDelete({
+    collection: notes,
+    ids: [note.id],
+    message: `Note "${note.title}" deleted.`,
+    commit: async () => {
+      try {
+        await api(`/notes/${note.id}`, { method: 'DELETE' });
+        await Promise.all([loadNotes(), loadDashboard(), loadProfile()]);
+      } catch (err) {
+        noteError.value = err.message;
+        await loadNotes();
+      }
+    }
+  });
+}
 
-  try {
-    await api(`/notes/${note.id}`, { method: 'DELETE' });
-    await Promise.all([loadNotes(), loadDashboard(), loadProfile()]);
-  } catch (err) {
-    noteError.value = err.message;
-  }
+export async function bulkDeleteNotes(noteIds) {
+  noteError.value = '';
+  scheduleCollectionDelete({
+    collection: notes,
+    ids: noteIds,
+    message: `${noteIds.length} note${noteIds.length === 1 ? '' : 's'} deleted.`,
+    commit: async () => {
+      try {
+        await Promise.all(noteIds.map((id) => api(`/notes/${id}`, { method: 'DELETE' })));
+        await Promise.all([loadNotes(), loadDashboard(), loadProfile()]);
+      } catch (err) {
+        noteError.value = err.message;
+        await loadNotes();
+      }
+    }
+  });
 }
 
 function taskPayload(source) {
@@ -1472,6 +1599,21 @@ export async function updateTask(task, data) {
   }
 }
 
+export async function bulkUpdateTasks(taskIds, data) {
+  taskError.value = '';
+  try {
+    await Promise.all(taskIds.map((id) => api(`/tasks/${id}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data)
+    })));
+    await Promise.all([loadTasks(), loadDashboard(), loadProfile()]);
+    return true;
+  } catch (err) {
+    taskError.value = err.message;
+    return false;
+  }
+}
+
 export async function saveTask(task, source) {
   await updateTask(task, taskPayload(source));
 }
@@ -1486,11 +1628,36 @@ export async function toggleTaskShare(task) {
 
 export async function deleteTask(task) {
   taskError.value = '';
+  scheduleCollectionDelete({
+    collection: tasks,
+    ids: [task.id],
+    message: `Task "${task.title}" deleted.`,
+    commit: async () => {
+      try {
+        await api(`/tasks/${task.id}`, { method: 'DELETE' });
+        await Promise.all([loadTasks(), loadDashboard(), loadProfile()]);
+      } catch (err) {
+        taskError.value = err.message;
+        await loadTasks();
+      }
+    }
+  });
+}
 
-  try {
-    await api(`/tasks/${task.id}`, { method: 'DELETE' });
-    await Promise.all([loadTasks(), loadDashboard(), loadProfile()]);
-  } catch (err) {
-    taskError.value = err.message;
-  }
+export async function bulkDeleteTasks(taskIds) {
+  taskError.value = '';
+  scheduleCollectionDelete({
+    collection: tasks,
+    ids: taskIds,
+    message: `${taskIds.length} task${taskIds.length === 1 ? '' : 's'} deleted.`,
+    commit: async () => {
+      try {
+        await Promise.all(taskIds.map((id) => api(`/tasks/${id}`, { method: 'DELETE' })));
+        await Promise.all([loadTasks(), loadDashboard(), loadProfile()]);
+      } catch (err) {
+        taskError.value = err.message;
+        await loadTasks();
+      }
+    }
+  });
 }

@@ -1,5 +1,6 @@
 <script setup>
-import { computed, onMounted, ref } from 'vue';
+import { computed, nextTick, onMounted, ref } from 'vue';
+import { useRoute } from 'vue-router';
 import { CheckCircle2, Download, File, Folder, HardDrive, RefreshCw, Search, Star, Tags, Trash2, Upload } from '@lucide/vue';
 import AppPage from '../components/AppPage.vue';
 import ConfirmDialog from '../components/ConfirmDialog.vue';
@@ -45,6 +46,7 @@ const editingMetadataPath = ref('');
 const editingSharePath = ref('');
 const metadataTagIds = ref([]);
 const shareUserIds = ref([]);
+const route = useRoute();
 
 const folders = computed(() => localFiles.value?.folders || []);
 const files = computed(() => localFiles.value?.files || []);
@@ -247,6 +249,11 @@ function selectAdapter() {
 
 onMounted(async () => {
   await Promise.all([loadSettings(), loadTags(), loadFileShareUsers(), loadLocalFiles(), loadSharedFiles()]);
+  if (route.query.upload === 'true') {
+    activePortalView.value = 'browser';
+    await nextTick();
+    uploadInput.value?.focus();
+  }
 });
 </script>
 

@@ -7,6 +7,8 @@ import {
   bookmarkError,
   bookmarks,
   bookmarksLoading,
+  bulkDeleteBookmarks,
+  bulkUpdateBookmarks,
   createBookmark,
   deleteBookmark,
   loadBookmarks,
@@ -21,7 +23,9 @@ import {
 
 const editingBookmark = ref(null);
 const pendingDelete = ref(null);
+const pendingBulkDelete = ref(false);
 const activeTagId = ref('');
+const selectedBookmarkIds = ref([]);
 
 const visibleBookmarks = computed(() => {
   if (!activeTagId.value) return bookmarks.value;
@@ -29,6 +33,8 @@ const visibleBookmarks = computed(() => {
 });
 const ownBookmarks = computed(() => visibleBookmarks.value.filter((bookmark) => bookmark.canEdit));
 const sharedBookmarks = computed(() => visibleBookmarks.value.filter((bookmark) => !bookmark.canEdit));
+const editableVisibleBookmarks = computed(() => visibleBookmarks.value.filter((bookmark) => bookmark.canEdit));
+const selectedEditableBookmarks = computed(() => editableVisibleBookmarks.value.filter((bookmark) => selectedBookmarkIds.value.includes(bookmark.id)));
 
 function beginEdit(bookmark) {
   editingBookmark.value = {
@@ -59,6 +65,40 @@ async function confirmDelete() {
   const bookmark = pendingDelete.value;
   pendingDelete.value = null;
   await deleteBookmark(bookmark);
+}
+
+function toggleAllVisibleBookmarks() {
+  selectedBookmarkIds.value = selectedBookmarkIds.value.length === editableVisibleBookmarks.value.length
+    ? []
+    : editableVisibleBookmarks.value.map((bookmark) => bookmark.id);
+}
+
+async function bulkSetShare(isShared) {
+  if (!selectedEditableBookmarks.value.length) return;
+  if (await bulkUpdateBookmarks(selectedEditableBookmarks.value.map((bookmark) => bookmark.id), { isShared })) {
+    selectedBookmarkIds.value = [];
+  }
+}
+
+async function bulkApplyTag(tagId) {
+  if (!selectedEditableBookmarks.value.length || !tagId) return;
+  await Promise.all(selectedEditableBookmarks.value.map((bookmark) => bulkUpdateBookmarks([bookmark.id], {
+    tagIds: [...new Set([...(bookmark.tags || []).map((tag) => tag.id), tagId])]
+  })));
+  selectedBookmarkIds.value = [];
+}
+
+function askBulkDelete() {
+  if (selectedEditableBookmarks.value.length) {
+    pendingBulkDelete.value = true;
+  }
+}
+
+async function confirmBulkDelete() {
+  const ids = selectedEditableBookmarks.value.map((bookmark) => bookmark.id);
+  pendingBulkDelete.value = false;
+  selectedBookmarkIds.value = [];
+  await bulkDeleteBookmarks(ids);
 }
 
 onMounted(async () => {
@@ -137,6 +177,23 @@ onMounted(async () => {
             <h4>Visible bookmarks</h4>
             <span>{{ visibleBookmarks.length }}</span>
           </div>
+          <div v-if="editableVisibleBookmarks.length" class="bulk-toolbar">
+            <label class="share-row">
+              <input
+                type="checkbox"
+                :checked="selectedBookmarkIds.length === editableVisibleBookmarks.length"
+                @change="toggleAllVisibleBookmarks"
+              />
+              <span>{{ selectedBookmarkIds.length ? `${selectedBookmarkIds.length} selected` : 'Select visible' }}</span>
+            </label>
+            <button type="button" :disabled="!selectedBookmarkIds.length" @click="bulkSetShare(true)">Share</button>
+            <button type="button" :disabled="!selectedBookmarkIds.length" @click="bulkSetShare(false)">Make private</button>
+            <select :disabled="!selectedBookmarkIds.length" @change="bulkApplyTag($event.target.value); $event.target.value = ''">
+              <option value="">Add tag</option>
+              <option v-for="tag in tags" :key="tag.id" :value="tag.id">{{ tag.name }}</option>
+            </select>
+            <button type="button" :disabled="!selectedBookmarkIds.length" @click="askBulkDelete">Delete</button>
+          </div>
           <div v-if="tags.length" class="tag-filter-row">
             <button :class="{ active: !activeTagId }" @click="activeTagId = ''">All tags</button>
             <button
@@ -155,6 +212,10 @@ onMounted(async () => {
           <article v-for="bookmark in visibleBookmarks" :key="bookmark.id" class="note-card">
             <template v-if="editingBookmark?.id !== bookmark.id">
               <div class="note-card-heading">
+                <label v-if="bookmark.canEdit" class="bulk-select">
+                  <input v-model="selectedBookmarkIds" type="checkbox" :value="bookmark.id" />
+                  <span>Select bookmark</span>
+                </label>
                 <div>
                   <h4>{{ bookmark.title }}</h4>
                   <p>{{ bookmark.isShared ? 'Shared' : 'Private' }} / {{ bookmark.owner.displayName }}</p>
@@ -216,6 +277,15 @@ onMounted(async () => {
       confirm-label="Delete"
       @cancel="cancelDelete"
       @confirm="confirmDelete"
+    />
+    <ConfirmDialog
+      :open="pendingBulkDelete"
+      eyebrow="Delete"
+      title="Delete selected bookmarks?"
+      :message="`This will delete ${selectedEditableBookmarks.length} selected bookmark${selectedEditableBookmarks.length === 1 ? '' : 's'} after the undo window.`"
+      confirm-label="Delete selected"
+      @cancel="pendingBulkDelete = false"
+      @confirm="confirmBulkDelete"
     />
   </AppPage>
 </template>

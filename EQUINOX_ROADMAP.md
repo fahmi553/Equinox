@@ -297,6 +297,7 @@ Still no NAS required.
 - [x] App shell
   - [x] Sidebar navigation
   - [x] Mobile navigation
+  - [x] Dark/light theme toggle
   - [x] Module landing pages
   - [x] Consistent empty states
   - [x] Practical family-friendly layouts
@@ -316,6 +317,7 @@ Still no NAS required.
   - [x] System settings table
   - [x] Integration settings table
   - [x] User preferences
+  - [x] Persisted theme preference
 
 ### Phase 3 - Storage Integration
 
@@ -344,6 +346,11 @@ Works on PC first and future NAS later.
   - [x] Important files
   - [x] Shared file portal view
   - [x] File tags
+  - [ ] Image preview
+  - [ ] PDF preview
+  - [ ] Text and Markdown preview
+  - [ ] Media file preview
+  - [ ] Bulk file actions
 
 ### Phase 4 - NAS Integration
 
@@ -376,16 +383,22 @@ Connect Equinox to UGOS through standard integrations.
   - [ ] Shopping list
   - [ ] Birthdays
   - [ ] Shared household checklist
+  - [ ] Notification preferences
+  - [ ] Undo or soft-delete recovery for shared household content
 - [ ] Photo Portal
   - [ ] Immich adapter
   - [ ] UGOS Photos adapter research
   - [ ] Recent photos
   - [ ] Albums
+  - [ ] Favorites
+  - [ ] Timeline view
 - [ ] Media Portal
   - [ ] Jellyfin adapter
   - [ ] Navidrome adapter
   - [ ] Audiobookshelf adapter
   - [ ] Continue watching / recently added
+  - [ ] Streaming links
+  - [ ] Music and audiobook browsing
 - [ ] Project Portal
   - [ ] Project list
   - [ ] Documentation links
@@ -397,6 +410,34 @@ Connect Equinox to UGOS through standard integrations.
   - [ ] Automated notification rules
   - [ ] Cleanup workflows
   - [ ] Backup workflow UI
+  - [ ] Simple rule builder
+  - [ ] Upload-triggered tagging rules
+  - [ ] Low-storage notification rules
+  - [ ] Nightly backup rule
+
+### Phase 6 - Productivity And UX Power Tools
+
+- [x] Global command palette
+  - [x] Open modules from keyboard
+  - [x] Search from keyboard
+  - [x] Create note from keyboard
+  - [x] Create task from keyboard
+  - [x] Upload file from keyboard
+- [x] Bulk productivity actions
+  - [x] Bulk tag notes
+  - [x] Bulk tag tasks
+  - [x] Bulk tag bookmarks
+  - [x] Bulk delete with confirmation
+  - [x] Bulk share or make private
+- [ ] Destructive action recovery
+  - [x] Undo snackbar for quick deletes where safe
+  - [ ] Soft delete for notes, tasks, and bookmarks
+  - [ ] Restore deleted productivity items
+- [ ] Mobile and PWA polish
+  - [x] Installable app shell
+  - [x] Improved mobile navigation
+  - [x] Offline-friendly shell
+  - [ ] Push notification research
 
 ## Current Checklist Audit
 
